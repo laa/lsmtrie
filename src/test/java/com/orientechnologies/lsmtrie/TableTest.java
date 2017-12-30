@@ -187,11 +187,6 @@ public class TableTest {
       final byte[] sha1 = digest.digest(entry.getKey().bytes);
       digest.reset();
 
-      final byte[] missedKes = new byte[] { 123, -68, -90, 44, 41, 74, -91, 94, -80, -49, -3, -94, 4, 56, 6, 90, 105, 109, -9, -87,
-          83, 25 };
-      if (Arrays.equals(missedKes, entry.getKey().bytes)) {
-        System.out.println();
-      }
       assertArrayEquals(entry.getValue().bytes, table.get(entry.getKey().bytes, sha1));
     }
 

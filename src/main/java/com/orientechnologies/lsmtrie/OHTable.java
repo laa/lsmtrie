@@ -54,24 +54,24 @@ public class OHTable implements OTable {
     }
 
     bucket.position(0);
-
     final int entriesCount = bucket.getShort();
 
-    //TODO: read directly form ByteBuffer array do not copy and compare
     for (int i = 0; i < entriesCount; i++) {
-      final byte[] shaPosition = new byte[ENTRY_SIZE];
-      bucket.get(shaPosition);
-
+      int offset = 2 + ENTRY_SIZE * i;
       boolean equals = true;
       for (int n = 0; n < SHA_1_SIZE; n++) {
-        if (shaPosition[n] != sha1[n]) {
+        if (data[offset] != sha1[n]) {
           equals = false;
           break;
         }
+
+        offset++;
       }
 
+      offset += DATA_OFFSET_SIZE;
+
       if (equals) {
-        bucket.position(bucket.position() - DATA_OFFSET_SIZE);
+        bucket.position(offset - DATA_OFFSET_SIZE);
 
         final int entryOffset = bucket.getInt();
 

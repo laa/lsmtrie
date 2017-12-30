@@ -207,21 +207,19 @@ public class OMemTable implements OTable {
   }
 
   private void moveOverloadedData(Bucket[] buckets) {
-    ////TODO: sort only entries which are participated in moving of data but not all of them
-    for (Bucket bucket : buckets) {
-      bucket.entries.sort(Comparator.comparingLong(EntryRef::getWaterMark));
-    }
-
     Bucket[] sortedBuckets = new Bucket[BUCKETS_COUNT];
 
     System.arraycopy(buckets, 0, sortedBuckets, 0, sortedBuckets.length);
     Arrays.sort(sortedBuckets, Comparator.comparingInt(o -> o.entries.size()));
 
     int minBucketIndex = 0;
+    sortedBuckets[0].entries.sort(Comparator.comparingLong(EntryRef::getWaterMark));
+
     for (int i = sortedBuckets.length - 1; i >= 0; i--) {
       Bucket bucket = sortedBuckets[i];
 
       if (bucket.entries.size() > BUCKET_ENTRIES_COUNT) {
+        bucket.entries.sort(Comparator.comparingLong(EntryRef::getWaterMark));
         minBucketIndex = moveOverloadedEntries(sortedBuckets, minBucketIndex, bucket);
       } else {
         break;
@@ -309,6 +307,12 @@ public class OMemTable implements OTable {
 
     if (minEntries.size() >= BUCKET_ENTRIES_COUNT) {
       minBucketIndex++;
+
+      if (minBucketIndex < buckets.length) {
+        buckets[minBucketIndex].entries.sort(Comparator.comparingLong(EntryRef::getWaterMark));
+      } else {
+        throw new IllegalStateException("All buckets are overloaded");
+      }
     }
 
     if (minEntries.size() > BUCKET_ENTRIES_COUNT) {

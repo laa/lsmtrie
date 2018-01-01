@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-public class OMemTable implements OTable {
+public class MemTable implements Table {
   @SuppressWarnings("NumericOverflow")
   private static final long OVERFLOW_BIT      = 1L << 63;
   private static final int  HEAP_DATA_OFFSET  = BUCKET_SIZE * BUCKETS_COUNT;
@@ -33,7 +33,7 @@ public class OMemTable implements OTable {
   private final LongAdder                            modifiersCount = new LongAdder();
   private final long id;
 
-  OMemTable(long id) {
+  MemTable(long id) {
     this.id = id;
   }
 
@@ -233,7 +233,7 @@ public class OMemTable implements OTable {
     boolean overloaded = false;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
       byte[] sha1 = entry.getKey().sha1;
-      final int bucketIndex = OHashUtils.getBucketIndex(sha1);
+      final int bucketIndex = HashUtils.getBucketIndex(sha1);
 
       Bucket bucket = buckets[bucketIndex];
 
@@ -341,7 +341,7 @@ public class OMemTable implements OTable {
 
     private long getWaterMark() {
       if (waterMark == -1) {
-        waterMark = OHashUtils.generateWaterMarkHash(sha1);
+        waterMark = HashUtils.generateWaterMarkHash(sha1);
       }
 
       return waterMark;

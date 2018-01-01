@@ -1,6 +1,6 @@
 package com.orientechnologies.lsmtrie;
 
-class OHashUtils {
+class HashUtils {
   public static long generateWaterMarkHash(byte[] sha1) {
     final long waterMark = ((0xFFL & sha1[8]) | ((0xFFL & sha1[9]) << 8) | ((0xFFL & sha1[10]) << 16) | ((0xFFL & sha1[11]) << 24));
     assert waterMark >= 0;
@@ -15,6 +15,6 @@ class OHashUtils {
 
     hashcode = hashcode ^ (hashcode >>> 16);
 
-    return hashcode & (OTable.BUCKETS_COUNT - 1);
+    return hashcode & (Table.BUCKETS_COUNT - 1);
   }
 }

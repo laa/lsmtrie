@@ -7,13 +7,13 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class OHTable implements OTable {
+public class HTable implements Table {
   private final BloomFilter<byte[]>[] bloomFilters;
   private final ByteBuffer            buffer;
   private final long                  id;
   private final ConcurrentHashMap<Short, WaterMarkInfo> overloadingMap = new ConcurrentHashMap<>();
 
-  OHTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id) {
+  HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id) {
     this.bloomFilters = bloomFilters;
     this.buffer = buffer;
     this.id = id;
@@ -21,7 +21,7 @@ public class OHTable implements OTable {
 
   @Override
   public byte[] get(byte[] key, byte[] sha1) {
-    final int bucketIndex = OHashUtils.getBucketIndex(sha1);
+    final int bucketIndex = HashUtils.getBucketIndex(sha1);
     final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
 
     if (bloomFilter.mightContain(key)) {
@@ -40,7 +40,7 @@ public class OHTable implements OTable {
     final WaterMarkInfo waterMarkInfo = overloadingMap.get((short) index);
     if (waterMarkInfo != null) {
       final long waterMark = waterMarkInfo.waterMark;
-      final long entryWaterMark = OHashUtils.generateWaterMarkHash(sha1);
+      final long entryWaterMark = HashUtils.generateWaterMarkHash(sha1);
       if (entryWaterMark >= waterMark) {
         return readValueFormBucket(key, sha1, waterMarkInfo.destId);
       }
@@ -60,7 +60,7 @@ public class OHTable implements OTable {
         final long waterMark = getWaterMark(bucket);
         overloadingMap.put((short) index, new WaterMarkInfo((short) destBucket, waterMark));
 
-        final long entryWaterMark = OHashUtils.generateWaterMarkHash(sha1);
+        final long entryWaterMark = HashUtils.generateWaterMarkHash(sha1);
         if (entryWaterMark >= waterMark) {
           return readValueFormBucket(key, sha1, destBucket);
         }

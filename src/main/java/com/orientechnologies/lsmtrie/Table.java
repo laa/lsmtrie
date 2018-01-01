@@ -1,6 +1,6 @@
 package com.orientechnologies.lsmtrie;
 
-public interface OTable {
+public interface Table {
   int BUCKET_SIZE          = 4 * 1024;
   int BUCKETS_COUNT        = 1024;
   int SHA_1_SIZE           = 20;

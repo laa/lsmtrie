@@ -29,7 +29,7 @@ public class TableTest {
 
         Map<ByteHolder, ByteHolder> entries = generateNEntries(items, random);
         assertEquals(items, entries.size());
-        OMemTable memTable = new OMemTable(1);
+        MemTable memTable = new MemTable(1);
 
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         long fillStart = System.nanoTime();
@@ -47,7 +47,7 @@ public class TableTest {
         SerializedHTable serializedHTable = memTable.toHTable();
         long toHTableEnd = System.nanoTime();
 
-        final OHTable hTable = new OHTable(serializedHTable.getBloomFilters(),
+        final HTable hTable = new HTable(serializedHTable.getBloomFilters(),
             serializedHTable.getHtableBuffer().asReadOnlyBuffer(), 1);
 
         long assertHTableStart = System.nanoTime();
@@ -73,7 +73,7 @@ public class TableTest {
 
     for (int k = 0; k < 3600; k++) {
       final Map<ByteHolder, ByteHolder> data = new HashMap<>();
-      final OMemTable memTable = new OMemTable(1);
+      final MemTable memTable = new MemTable(1);
 
       final long seed = System.nanoTime();
       System.out.println("testTillFull seed : " + seed);
@@ -113,7 +113,7 @@ public class TableTest {
       final SerializedHTable serializedHTable = memTable.toHTable();
       long toHTableEnd = System.nanoTime();
 
-      final OHTable hTable = new OHTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1);
+      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1);
       long assertHTableStart = System.nanoTime();
       assertTable(data, absentValues, hTable, digest);
       long assertHTableEnd = System.nanoTime();
@@ -170,7 +170,7 @@ public class TableTest {
     return value;
   }
 
-  private void fillMemTable(OMemTable table, Map<ByteHolder, ByteHolder> entries, MessageDigest digest) {
+  private void fillMemTable(MemTable table, Map<ByteHolder, ByteHolder> entries, MessageDigest digest) {
     for (Map.Entry<ByteHolder, ByteHolder> entry : entries.entrySet()) {
       digest.reset();
       final byte[] sha1 = digest.digest(entry.getKey().bytes);
@@ -180,7 +180,7 @@ public class TableTest {
     }
   }
 
-  private void assertTable(Map<ByteHolder, ByteHolder> existingValues, Set<ByteHolder> absentValues, OTable table,
+  private void assertTable(Map<ByteHolder, ByteHolder> existingValues, Set<ByteHolder> absentValues, Table table,
       MessageDigest digest) {
     for (Map.Entry<ByteHolder, ByteHolder> entry : existingValues.entrySet()) {
       digest.reset();

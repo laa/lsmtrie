@@ -25,11 +25,11 @@ import java.util.concurrent.atomic.AtomicReference;
 public class OLSMTrie {
   private final Set<FileChannel> htableChannels = Collections.newSetFromMap(new ConcurrentHashMap<>());
   private final String name;
-  private final AtomicLong                                           tableIdGen            = new AtomicLong();
-  private final ConcurrentSkipListMap<Long, AtomicReference<OTable>> tables                = new ConcurrentSkipListMap<>();
-  private final AtomicReference<OMemTable>                           current               = new AtomicReference<>();
-  private final Semaphore                                            allowedQueueMemtables = new Semaphore(2);
-  private final ExecutorService                                      serviceThreads        = Executors.newCachedThreadPool();
+  private final AtomicLong                                          tableIdGen            = new AtomicLong();
+  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables                = new ConcurrentSkipListMap<>();
+  private final AtomicReference<MemTable>                           current               = new AtomicReference<>();
+  private final Semaphore                                           allowedQueueMemtables = new Semaphore(2);
+  private final ExecutorService                                     serviceThreads        = Executors.newCachedThreadPool();
 
   private final ThreadLocal<MessageDigest> messageDigest = ThreadLocal.withInitial(() -> {
     try {
@@ -43,7 +43,7 @@ public class OLSMTrie {
     this.name = name;
 
     final long tableId = tableIdGen.getAndIncrement();
-    final OMemTable table = new OMemTable(tableId);
+    final MemTable table = new MemTable(tableId);
 
     current.set(table);
     tables.put(tableId, new AtomicReference<>(table));
@@ -74,11 +74,11 @@ public class OLSMTrie {
 
     final byte[] sha1 = digest.digest(key);
 
-    final OMemTable memTable = current.get();
+    final MemTable memTable = current.get();
     final boolean added = memTable.put(sha1, key, value);
 
     if (!added) {
-      final OMemTable newTable = new OMemTable(tableIdGen.getAndIncrement());
+      final MemTable newTable = new MemTable(tableIdGen.getAndIncrement());
       tables.put(newTable.getId(), new AtomicReference<>(newTable));
       if (current.compareAndSet(memTable, newTable)) {
         try {
@@ -99,8 +99,8 @@ public class OLSMTrie {
 
     byte[] value = null;
     final byte[] sha1 = digest.digest(key);
-    for (AtomicReference<OTable> tableRef : tables.values()) {
-      final OTable table = tableRef.get();
+    for (AtomicReference<Table> tableRef : tables.values()) {
+      final Table table = tableRef.get();
       final byte[] tableValue = table.get(key, sha1);
       if (tableValue != null) {
         value = tableValue;
@@ -111,9 +111,9 @@ public class OLSMTrie {
   }
 
   private class MemTableSaver implements Callable<Void> {
-    private final OMemTable memTable;
+    private final MemTable memTable;
 
-    MemTableSaver(OMemTable memTable) {
+    MemTableSaver(MemTable memTable) {
       this.memTable = memTable;
     }
 
@@ -146,9 +146,9 @@ public class OLSMTrie {
         serializedHTable.free();
         htableChannel.force(true);
 
-        final OHTable hTable = new OHTable(serializedHTable.getBloomFilters(),
+        final HTable hTable = new HTable(serializedHTable.getBloomFilters(),
             htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId);
-        final AtomicReference<OTable> table = tables.get(tableId);
+        final AtomicReference<Table> table = tables.get(tableId);
         table.set(hTable);
 
         allowedQueueMemtables.release();

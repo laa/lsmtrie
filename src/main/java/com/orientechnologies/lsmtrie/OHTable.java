@@ -5,11 +5,13 @@ import com.google.common.hash.BloomFilter;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class OHTable implements OTable {
   private final BloomFilter<byte[]>[] bloomFilters;
   private final ByteBuffer            buffer;
   private final long                  id;
+  private final ConcurrentHashMap<Short, WaterMarkInfo> overloadingMap = new ConcurrentHashMap<>();
 
   OHTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id) {
     this.bloomFilters = bloomFilters;
@@ -19,8 +21,7 @@ public class OHTable implements OTable {
 
   @Override
   public byte[] get(byte[] key, byte[] sha1) {
-    final int bucketIndexMask = 0x3;
-    final int bucketIndex = ((sha1[1] & bucketIndexMask) << 8) | (0xFF & sha1[0]);
+    final int bucketIndex = OHashUtils.getBucketIndex(sha1);
     final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
 
     if (bloomFilter.mightContain(key)) {
@@ -36,6 +37,15 @@ public class OHTable implements OTable {
   }
 
   private byte[] readValueFormBucket(byte[] key, byte[] sha1, int index) {
+    final WaterMarkInfo waterMarkInfo = overloadingMap.get((short) index);
+    if (waterMarkInfo != null) {
+      final long waterMark = waterMarkInfo.waterMark;
+      final long entryWaterMark = OHashUtils.generateWaterMarkHash(sha1);
+      if (entryWaterMark >= waterMark) {
+        return readValueFormBucket(key, sha1, waterMarkInfo.destId);
+      }
+    }
+
     final byte[] data = new byte[BUCKET_SIZE];
 
     final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
@@ -43,13 +53,17 @@ public class OHTable implements OTable {
     htable.get(data);
 
     final ByteBuffer bucket = ByteBuffer.wrap(data).order(ByteOrder.nativeOrder());
-    final int destBucket = getDestBucket(bucket);
-    if (destBucket >= 0) {
-      final long waterMark = getWaterMark(bucket);
-      final long entryWaterMark = OHashUtils.generateWaterMarkHash(sha1);
+    if (waterMarkInfo == null) {
+      final int destBucket = getDestBucket(bucket);
 
-      if (entryWaterMark >= waterMark) {
-        return readValueFormBucket(key, sha1, destBucket);
+      if (destBucket >= 0) {
+        final long waterMark = getWaterMark(bucket);
+        overloadingMap.put((short) index, new WaterMarkInfo((short) destBucket, waterMark));
+
+        final long entryWaterMark = OHashUtils.generateWaterMarkHash(sha1);
+        if (entryWaterMark >= waterMark) {
+          return readValueFormBucket(key, sha1, destBucket);
+        }
       }
     }
 
@@ -101,10 +115,19 @@ public class OHTable implements OTable {
   }
 
   private long getWaterMark(ByteBuffer bucket) {
-    //TODO: hash water mark data in concurrent hash map to avoiding of reading of whole bucket
     final int offset = BUCKET_SIZE - WATER_MARK_OFFSET;
     bucket.position(offset);
 
     return bucket.getLong();
+  }
+
+  private final class WaterMarkInfo {
+    private final short destId;
+    private final long  waterMark;
+
+    WaterMarkInfo(short destId, long waterMark) {
+      this.destId = destId;
+      this.waterMark = waterMark;
+    }
   }
 }

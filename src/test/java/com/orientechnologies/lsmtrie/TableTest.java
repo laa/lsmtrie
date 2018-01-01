@@ -124,8 +124,8 @@ public class TableTest {
       counter++;
     }
 
-    System.out.printf("htable conversion time : %d ns, htable assert time %d, ns\n", convertHTableTime / counter,
-        assertHTableTime / counter);
+    System.out.printf("htable conversion time : %d ns, htable assert time %d ns, %d ns/item\n", convertHTableTime / counter,
+        assertHTableTime / counter, assertHTableTime / counter / 156672);
   }
 
   private Set<ByteHolder> generateNNotExistingEntries(int n, Map<ByteHolder, ByteHolder> entries, Random random) {

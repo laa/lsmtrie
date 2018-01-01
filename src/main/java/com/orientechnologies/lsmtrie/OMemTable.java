@@ -229,12 +229,11 @@ public class OMemTable implements OTable {
 
   private boolean fillHeapData(Pointer pointer, Bucket[] buckets, BloomFilter<byte[]>[] bloomFilters) {
     int dataOffset = HEAP_DATA_OFFSET;
-    final int bucketIndexMask = 0x3;
 
     boolean overloaded = false;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
       byte[] sha1 = entry.getKey().sha1;
-      final int bucketIndex = ((sha1[1] & bucketIndexMask) << 8) | (0xFF & sha1[0]);
+      final int bucketIndex = OHashUtils.getBucketIndex(sha1);
 
       Bucket bucket = buckets[bucketIndex];
 

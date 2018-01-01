@@ -1,12 +1,20 @@
 package com.orientechnologies.lsmtrie;
 
-public class OHashUtils {
+class OHashUtils {
   public static long generateWaterMarkHash(byte[] sha1) {
-    final long waterMark =
-        ((0xFFL & sha1[2]) >>> 2) | ((0xFFL & sha1[3]) << 6) | ((0xFFL & sha1[4]) << 14) | ((0xFFL & sha1[5]) << 22) | ((0x3L & sha1[6])
-            << 30);
+    final long waterMark = ((0xFFL & sha1[8]) | ((0xFFL & sha1[9]) << 8) | ((0xFFL & sha1[10]) << 16) | ((0xFFL & sha1[11]) << 24));
     assert waterMark >= 0;
     return waterMark;
+  }
 
+  public static int getBucketIndex(byte[] sha1) {
+    int hashcode = 1;
+    for (int i = 0; i < 8; i++) {
+      hashcode = 31 * hashcode + sha1[i];
+    }
+
+    hashcode = hashcode ^ (hashcode >>> 16);
+
+    return hashcode & (OTable.BUCKETS_COUNT - 1);
   }
 }

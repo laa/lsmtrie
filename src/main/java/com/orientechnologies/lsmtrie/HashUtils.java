@@ -24,10 +24,10 @@ class HashUtils {
 
     final int bitsOffset = offset - bytes * 8;
     if (bitsOffset < 6) {
-      return sha1[sha1.length - bytes] >>> (8 - bitsOffset);
+      return (0xFF & sha1[sha1.length - bytes - 1]) >>> (8 - bitsOffset);
     } else {
-      final int firstPart = (sha1[sha1.length - bytes] >>> 5) & (1 << bitsOffset - 5);
-      final int secondPart = sha1[sha1.length - bytes - 1] >>> (8 - (bitsOffset - 5));
+      final int firstPart = ((0xFF & sha1[sha1.length - bytes - 1]) >>> 5) & (1 << bitsOffset - 5);
+      final int secondPart = (0xFF & sha1[sha1.length - bytes - 2]) >>> (8 - (bitsOffset - 5));
       return firstPart | secondPart;
     }
   }

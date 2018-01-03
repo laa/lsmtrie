@@ -1,10 +1,12 @@
 package com.orientechnologies.lsmtrie;
 
-import com.sun.jna.Native;
 import com.sun.jna.Platform;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -44,7 +46,7 @@ public class Node0 implements Node {
 
   public void removeTable(long id) {
     tables.remove(id);
-    final HTableFileChannel hTableFileChannel = tableChannels.get(id);
+    final HTableFileChannel hTableFileChannel = tableChannels.remove(id);
     if (hTableFileChannel != null) {
       try {
         hTableFileChannel.getChannel().close();
@@ -58,7 +60,7 @@ public class Node0 implements Node {
 
         Files.delete(hTableFileChannel.getBloomFilterPath());
       } catch (IOException e) {
-        throw new IllegalStateException("Error during deletion of htable");
+        throw new IllegalStateException("Error during deletion of htable", e);
       }
     }
   }
@@ -116,19 +118,22 @@ public class Node0 implements Node {
     }
   }
 
-  public HTable getOldestHtable() {
-    final Map.Entry<Long, AtomicReference<Table>> entry = tables.lastEntry();
-    if (entry == null) {
-      return null;
+  public List<HTable> getNOldestHTables(int n) {
+    final List<HTable> result = new ArrayList<>();
+    final Iterator<AtomicReference<Table>> entries = tables.values().iterator();
+    int counter = 0;
+
+    while (entries.hasNext() && counter < n) {
+      final AtomicReference<Table> tableRef = entries.next();
+      final Table table = tableRef.get();
+      if (table instanceof MemTable) {
+        break;
+      }
+
+      result.add((HTable) table);
     }
 
-    final AtomicReference<Table> tableRef = entry.getValue();
-    final Table table = tableRef.get();
-    if (table instanceof HTable) {
-      return (HTable) table;
-    }
-
-    return null;
+    return result;
   }
 
   @Override

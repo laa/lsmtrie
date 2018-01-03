@@ -4,6 +4,9 @@ import com.sun.jna.Platform;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -77,19 +80,24 @@ public class NodeN implements Node {
   }
 
   @Override
-  public HTable getOldestHtable() {
-    final Map.Entry<Long, HTable> entry = tables.lastEntry();
-    if (entry == null) {
-      return null;
+  public List<HTable> getNOldestHTables(int n) {
+    final List<HTable> result = new ArrayList<>();
+    final Iterator<HTable> entries = tables.values().iterator();
+    int counter = 0;
+
+    while (entries.hasNext() && counter < n) {
+      final HTable table = entries.next();
+      result.add(table);
     }
 
-    return entry.getValue();
+    return result;
+
   }
 
   @Override
   public void removeTable(long id) {
     tables.remove(id);
-    final HTableFileChannel hTableFileChannel = tableChannels.get(id);
+    final HTableFileChannel hTableFileChannel = tableChannels.remove(id);
     try {
       hTableFileChannel.getChannel().close();
       try {
@@ -106,7 +114,7 @@ public class NodeN implements Node {
     }
   }
 
-  public void delete()  {
+  public void delete() {
     for (HTableFileChannel hTableFileChannel : tableChannels.values()) {
       try {
         hTableFileChannel.getChannel().close();

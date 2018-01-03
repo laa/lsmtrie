@@ -22,23 +22,28 @@ public class CompactionDataMoveSubTask extends RecursiveAction {
 
   @Override
   protected void compute() {
-    nextProcessedItem = startEntryIndex;
-    int bucketLength = hTable.bucketLength(bucketIndex);
+    try {
+      nextProcessedItem = startEntryIndex;
+      int bucketLength = hTable.bucketLength(bucketIndex);
 
-    while (nextProcessedItem < bucketLength) {
-      final byte[][] entry = hTable.getBucketItem(bucketIndex, nextProcessedItem);
-      final int memIndex = HashUtils.childNodeIndex(level, entry[0]);
-      final MemTable memTable = memTables[memIndex];
-      final boolean added = memTable.put(entry[0], entry[1], entry[2]);
+      while (nextProcessedItem < bucketLength) {
+        final byte[][] entry = hTable.getBucketItem(bucketIndex, nextProcessedItem);
+        final int memIndex = HashUtils.childNodeIndex(level, entry[0]);
+        final MemTable memTable = memTables[memIndex];
+        final boolean added = memTable.put(entry[0], entry[1], entry[2]);
 
-      if (!added) {
-        return;
+        if (!added) {
+          return;
+        }
+
+        nextProcessedItem++;
       }
 
-      nextProcessedItem++;
+      complete = true;
+    } catch (Exception | Error e) {
+      e.printStackTrace();
+      throw e;
     }
-
-    complete = true;
   }
 
   public int getBucketIndex() {

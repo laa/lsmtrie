@@ -33,7 +33,7 @@ public class LSMTrieTest {
 
   @Test
   public void testAddNkeys() throws Exception {
-    int n = 4 * 156_672;
+    int n = 9 * 156_672;
 
     final long seed = System.nanoTime();
     System.out.println("testAddNkeys (" + n + " keys) seed: " + seed);
@@ -43,15 +43,21 @@ public class LSMTrieTest {
 
     Map<ByteHolder, ByteHolder> data = generateNEntries(n, random);
 
+    long fillStart = System.nanoTime();
     for (Map.Entry<ByteHolder, ByteHolder> entry : data.entrySet()) {
       lsmTrie.put(entry.getKey().bytes, entry.getValue().bytes);
     }
+    long fillEnd = System.nanoTime();
+
+    System.out.printf("Load speed for %d items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
+        n * 1000_000_000L / (fillEnd - fillStart));
 
     Set<ByteHolder> nonExistingData = generateNNotExistingEntries(n, data, random);
 
-    for (int k = 0; k < 100; k++) {
+    for (int k = 0; k < 20; k++) {
+      System.out.printf("%d check \n", k + 1);
       assertTable(data, nonExistingData, lsmTrie);
-      Thread.sleep(1000);
+      Thread.sleep(10);
     }
 
     lsmTrie.delete();

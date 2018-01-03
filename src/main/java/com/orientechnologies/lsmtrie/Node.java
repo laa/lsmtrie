@@ -1,9 +1,11 @@
 package com.orientechnologies.lsmtrie;
 
+import java.util.List;
+
 public interface Node {
   NodeN[] getChildren();
 
-  HTable getOldestHtable();
+  List<HTable> getNOldestHTables(int n);
 
   void removeTable(long id);
 

@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -22,7 +23,9 @@ public class OLSMTrie {
   private final AtomicLong tableIdGen            = new AtomicLong();
   private final AtomicLong nodeIdGen             = new AtomicLong();
   private final Semaphore  allowedQueueMemtables = new Semaphore(2);
-  private final Node0 node0;
+  private final Node0          node0;
+  private final CompactionTask compactionTask;
+  private final AtomicBoolean stopCompaction = new AtomicBoolean();
 
   private final Semaphore compactionCounter = new Semaphore(0);
 
@@ -46,6 +49,8 @@ public class OLSMTrie {
 
     node0 = new Node0(0, nodeIdGen.getAndIncrement(), nodeIdGen, compactionCounter);
     node0.addMemTable(table);
+    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0);
+    compactionPool.submit(compactionTask);
   }
 
   public void close() {
@@ -66,6 +71,7 @@ public class OLSMTrie {
 
     node0.updateTable(hTable, new HTableFileChannel(bloomFilterPath, htablePath, htableChannel));
 
+    stopCompaction.set(true);
     serviceThreads.shutdown();
     try {
       if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
@@ -79,6 +85,7 @@ public class OLSMTrie {
   }
 
   public void delete() {
+    stopCompaction.set(true);
     serviceThreads.shutdown();
     try {
       if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {

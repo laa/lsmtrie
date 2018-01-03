@@ -148,6 +148,10 @@ public class MemTable implements Table {
     return map.size();
   }
 
+  boolean isEmpty() {
+    return map.isEmpty();
+  }
+
   int memorySize() {
     int size = HEAP_DATA_OFFSET;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
@@ -247,7 +251,7 @@ public class MemTable implements Table {
     boolean overloaded = false;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
       byte[] sha1 = entry.getKey().sha1;
-      final int bucketIndex = HashUtils.getBucketIndex(sha1);
+      final int bucketIndex = HashUtils.bucketIndex(sha1);
 
       Bucket bucket = buckets[bucketIndex];
 

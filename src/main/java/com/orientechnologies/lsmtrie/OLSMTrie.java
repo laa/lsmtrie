@@ -1,35 +1,32 @@
 package com.orientechnologies.lsmtrie;
 
-import com.google.common.hash.BloomFilter;
-
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Collections;
-import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class OLSMTrie {
-  private final Set<FileChannel> htableChannels = Collections.newSetFromMap(new ConcurrentHashMap<>());
+  private static final ForkJoinPool compactionPool = ForkJoinPool.commonPool();
+
+  private final AtomicReference<MemTable> current = new AtomicReference<>();
   private final String name;
-  private final AtomicLong                                          tableIdGen            = new AtomicLong();
-  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables                = new ConcurrentSkipListMap<>();
-  private final AtomicReference<MemTable>                           current               = new AtomicReference<>();
-  private final Semaphore                                           allowedQueueMemtables = new Semaphore(2);
-  private final ExecutorService                                     serviceThreads        = Executors.newCachedThreadPool();
+  private final AtomicLong tableIdGen            = new AtomicLong();
+  private final AtomicLong nodeIdGen             = new AtomicLong();
+  private final Semaphore  allowedQueueMemtables = new Semaphore(2);
+  private final Node0 node0;
+
+  private final Semaphore compactionCounter = new Semaphore(0);
+
+  private final ExecutorService serviceThreads = Executors.newCachedThreadPool();
 
   private final ThreadLocal<MessageDigest> messageDigest = ThreadLocal.withInitial(() -> {
     try {
@@ -46,10 +43,29 @@ public class OLSMTrie {
     final MemTable table = new MemTable(tableId);
 
     current.set(table);
-    tables.put(tableId, new AtomicReference<>(table));
+
+    node0 = new Node0(0, nodeIdGen.getAndIncrement(), nodeIdGen, compactionCounter);
+    node0.addMemTable(table);
   }
 
   public void close() {
+    final MemTable memTable = current.get();
+    memTable.waitTillZeroModifiers();
+
+    final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, name);
+    try {
+      convertToHTableAction.invoke();
+    } catch (IOException e) {
+      throw new IllegalStateException("Can not convert memtable to htable", e);
+    }
+
+    final Path htablePath = convertToHTableAction.getHtablePath();
+    final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
+    final FileChannel htableChannel = convertToHTableAction.getHtableChannel();
+    final HTable hTable = convertToHTableAction.gethTable();
+
+    node0.updateTable(hTable, new HTableFileChannel(bloomFilterPath, htablePath, htableChannel));
+
     serviceThreads.shutdown();
     try {
       if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
@@ -59,13 +75,20 @@ public class OLSMTrie {
       return;
     }
 
-    for (FileChannel channel : htableChannels) {
-      try {
-        channel.close();
-      } catch (IOException e) {
-        e.printStackTrace();
+    node0.close();
+  }
+
+  public void delete() {
+    serviceThreads.shutdown();
+    try {
+      if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
+        throw new IllegalStateException("Can not terminate service threads");
       }
+    } catch (InterruptedException e) {
+      return;
     }
+
+    node0.delete();
   }
 
   public void put(byte[] key, byte[] value) {
@@ -79,7 +102,7 @@ public class OLSMTrie {
 
     if (!added) {
       final MemTable newTable = new MemTable(tableIdGen.getAndIncrement());
-      tables.put(newTable.getId(), new AtomicReference<>(newTable));
+      node0.addMemTable(newTable);
       if (current.compareAndSet(memTable, newTable)) {
         try {
           allowedQueueMemtables.acquire();
@@ -88,7 +111,7 @@ public class OLSMTrie {
         }
         serviceThreads.submit(new MemTableSaver(memTable));
       } else {
-        tables.remove(newTable.getId());
+        node0.removeTable(newTable.getId());
       }
     }
   }
@@ -97,17 +120,9 @@ public class OLSMTrie {
     final MessageDigest digest = messageDigest.get();
     digest.reset();
 
-    byte[] value = null;
     final byte[] sha1 = digest.digest(key);
-    for (AtomicReference<Table> tableRef : tables.values()) {
-      final Table table = tableRef.get();
-      final byte[] tableValue = table.get(key, sha1);
-      if (tableValue != null) {
-        value = tableValue;
-      }
-    }
 
-    return value;
+    return node0.get(key, sha1);
   }
 
   private class MemTableSaver implements Callable<Void> {
@@ -122,34 +137,13 @@ public class OLSMTrie {
       try {
         memTable.waitTillZeroModifiers();
 
-        final SerializedHTable serializedHTable = memTable.toHTable();
-        final long tableId = memTable.getId();
+        final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, name).invoke();
+        final Path htablePath = convertToHTableAction.getHtablePath();
+        final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
+        final FileChannel htableChannel = convertToHTableAction.getHtableChannel();
+        final HTable hTable = convertToHTableAction.gethTable();
 
-        final String htableName = name + "_" + tableId + ".htb";
-        final String bloomFiltersName = name + "_" + tableId + ".bl";
-
-        final FileChannel bloomChannel = FileChannel
-            .open(Paths.get(bloomFiltersName), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ);
-
-        try (final OutputStream outputStream = Channels.newOutputStream(bloomChannel)) {
-          for (BloomFilter<byte[]> bloomFilter : serializedHTable.getBloomFilters()) {
-            bloomFilter.writeTo(outputStream);
-          }
-        }
-        bloomChannel.force(true);
-        bloomChannel.close();
-
-        final FileChannel htableChannel = FileChannel
-            .open(Paths.get(htableName), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ);
-        htableChannels.add(htableChannel);
-        htableChannel.write(serializedHTable.getHtableBuffer());
-        serializedHTable.free();
-        htableChannel.force(true);
-
-        final HTable hTable = new HTable(serializedHTable.getBloomFilters(),
-            htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId);
-        final AtomicReference<Table> table = tables.get(tableId);
-        table.set(hTable);
+        node0.updateTable(hTable, new HTableFileChannel(bloomFilterPath, htablePath, htableChannel));
 
         allowedQueueMemtables.release();
       } catch (Exception | Error e) {
@@ -158,5 +152,7 @@ public class OLSMTrie {
       }
       return null;
     }
+
   }
+
 }

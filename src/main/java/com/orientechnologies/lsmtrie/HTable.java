@@ -21,7 +21,7 @@ public class HTable implements Table {
 
   @Override
   public byte[] get(byte[] key, byte[] sha1) {
-    final int bucketIndex = HashUtils.getBucketIndex(sha1);
+    final int bucketIndex = HashUtils.bucketIndex(sha1);
     final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
 
     if (bloomFilter.mightContain(key)) {
@@ -29,6 +29,39 @@ public class HTable implements Table {
     }
 
     return null;
+  }
+
+  public int bucketLength(int index) {
+    final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+    htable.position(index * BUCKET_SIZE);
+
+    return htable.getShort();
+  }
+
+  public byte[][] getBucketItem(int bucketIndex, int entryIndex) {
+    final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+    htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
+
+    final byte[] sha1 = new byte[SHA_1_SIZE];
+    htable.get(sha1);
+
+    final int entryOffset = htable.getInt();
+
+    htable.position(entryOffset);
+    final int keyLength = htable.getShort();
+    final byte[] key = new byte[keyLength];
+    htable.get(key);
+
+    final int valueLength = htable.getShort();
+    final byte[] value = new byte[valueLength];
+    htable.get(value);
+
+    final byte[][] result = new byte[3][];
+    result[0] = sha1;
+    result[1] = key;
+    result[2] = value;
+
+    return result;
   }
 
   @Override

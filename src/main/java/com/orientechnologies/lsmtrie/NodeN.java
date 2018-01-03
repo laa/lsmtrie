@@ -1,5 +1,7 @@
 package com.orientechnologies.lsmtrie;
 
+import com.sun.jna.Platform;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Map;
@@ -90,7 +92,14 @@ public class NodeN implements Node {
     final HTableFileChannel hTableFileChannel = tableChannels.get(id);
     try {
       hTableFileChannel.getChannel().close();
-      Files.delete(hTableFileChannel.getHtablePath());
+      try {
+        Files.delete(hTableFileChannel.getHtablePath());
+      } catch (IOException e) {
+        if (Platform.isWindows()) {
+          System.out.println("Can not delete htable file on windows");
+        }
+      }
+
       Files.delete(hTableFileChannel.getBloomFilterPath());
     } catch (IOException e) {
       throw new IllegalStateException("Error during deletion of htable");
@@ -102,7 +111,14 @@ public class NodeN implements Node {
       try {
         hTableFileChannel.getChannel().close();
         Files.delete(hTableFileChannel.getBloomFilterPath());
-        Files.delete(hTableFileChannel.getHtablePath());
+        try {
+          Files.delete(hTableFileChannel.getHtablePath());
+        } catch (IOException e) {
+          if (Platform.isWindows()) {
+            System.out.println("Can not delete htable file on windows");
+          }
+        }
+
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }

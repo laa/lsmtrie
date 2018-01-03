@@ -11,16 +11,18 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 class ConvertToHTableAction {
-  private Path        bloomFilterPath;
-  private Path        htablePath;
-  private FileChannel htableChannel;
-  private HTable      hTable;
+  private       Path        bloomFilterPath;
+  private       Path        htablePath;
+  private       FileChannel htableChannel;
+  private       HTable      hTable;
+  private final Path        root;
 
   private final MemTable memTable;
   private final String   name;
 
-  ConvertToHTableAction(MemTable memTable, String name) {
+  ConvertToHTableAction(MemTable memTable, Path root, String name) {
     this.memTable = memTable;
+    this.root = root;
     this.name = name;
   }
 
@@ -47,19 +49,19 @@ class ConvertToHTableAction {
     final String htableName = name + "_" + tableId + ".htb";
     final String bloomFiltersName = name + "_" + tableId + ".bl";
 
-    bloomFilterPath = Paths.get(bloomFiltersName);
-    final FileChannel bloomChannel = FileChannel
-        .open(bloomFilterPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ);
+    bloomFilterPath = root.resolve(bloomFiltersName);
 
-    try (final OutputStream outputStream = Channels.newOutputStream(bloomChannel)) {
+    try (FileChannel bloomChannel = FileChannel
+        .open(bloomFilterPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
+      final OutputStream outputStream = Channels.newOutputStream(bloomChannel);
       for (BloomFilter<byte[]> bloomFilter : serializedHTable.getBloomFilters()) {
         bloomFilter.writeTo(outputStream);
       }
-    }
-    bloomChannel.force(true);
-    bloomChannel.close();
 
-    htablePath = Paths.get(htableName);
+      bloomChannel.force(true);
+    }
+
+    htablePath = root.resolve(htableName);
     htableChannel = FileChannel.open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ);
     htableChannel.write(serializedHTable.getHtableBuffer());
     serializedHTable.free();

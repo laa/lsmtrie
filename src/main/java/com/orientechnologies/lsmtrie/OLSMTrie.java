@@ -2,6 +2,7 @@ package com.orientechnologies.lsmtrie;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class OLSMTrie {
   private static final ForkJoinPool compactionPool = ForkJoinPool.commonPool();
 
+  private final Path root;
   private final AtomicReference<MemTable> current = new AtomicReference<>();
   private final String name;
   private final AtomicLong tableIdGen            = new AtomicLong();
@@ -39,8 +41,11 @@ public class OLSMTrie {
     }
   });
 
-  public OLSMTrie(String name) {
+  OLSMTrie(String name, Path root) throws IOException {
     this.name = name;
+    this.root = root;
+
+    Files.createDirectories(root);
 
     final long tableId = tableIdGen.getAndIncrement();
     final MemTable table = new MemTable(tableId);
@@ -49,7 +54,7 @@ public class OLSMTrie {
 
     node0 = new Node0(0, nodeIdGen.getAndIncrement(), nodeIdGen, compactionCounter);
     node0.addMemTable(table);
-    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0);
+    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, root);
     compactionPool.submit(compactionTask);
   }
 
@@ -57,7 +62,7 @@ public class OLSMTrie {
     final MemTable memTable = current.get();
     memTable.waitTillZeroModifiers();
 
-    final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, name);
+    final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name);
     try {
       convertToHTableAction.invoke();
     } catch (IOException e) {
@@ -104,10 +109,10 @@ public class OLSMTrie {
 
     final byte[] sha1 = digest.digest(key);
 
-    final MemTable memTable = current.get();
-    final boolean added = memTable.put(sha1, key, value);
+    MemTable memTable = current.get();
+    boolean added = memTable.put(sha1, key, value);
 
-    if (!added) {
+    while (!added) {
       final MemTable newTable = new MemTable(tableIdGen.getAndIncrement());
       node0.addMemTable(newTable);
       if (current.compareAndSet(memTable, newTable)) {
@@ -120,6 +125,9 @@ public class OLSMTrie {
       } else {
         node0.removeTable(newTable.getId());
       }
+
+      memTable = current.get();
+      added = memTable.put(sha1, key, value);
     }
   }
 
@@ -144,7 +152,7 @@ public class OLSMTrie {
       try {
         memTable.waitTillZeroModifiers();
 
-        final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, name).invoke();
+        final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name).invoke();
         final Path htablePath = convertToHTableAction.getHtablePath();
         final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
         final FileChannel htableChannel = convertToHTableAction.getHtableChannel();

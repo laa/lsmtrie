@@ -79,6 +79,9 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.19.1</version>
                 <configuration>
+                    <systemPropertyVariables>
+                        <buildDirectory>${project.build.directory}</buildDirectory>
+                    </systemPropertyVariables>
                     <includes>
                         <include>**/Test*.java</include>
                         <include>**/*Test.java</include>

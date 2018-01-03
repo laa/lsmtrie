@@ -1,14 +1,24 @@
 package com.orientechnologies.lsmtrie;
 
+import com.google.common.util.concurrent.Striped;
 import org.junit.Test;
 
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.locks.Lock;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,8 +57,8 @@ public class TableTest {
         SerializedHTable serializedHTable = memTable.toHTable();
         long toHTableEnd = System.nanoTime();
 
-        final HTable hTable = new HTable(serializedHTable.getBloomFilters(),
-            serializedHTable.getHtableBuffer().asReadOnlyBuffer(), 1);
+        final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer().asReadOnlyBuffer(),
+            1);
 
         long assertHTableStart = System.nanoTime();
         assertTable(entries, nonExisting, hTable, digest);
@@ -128,6 +138,53 @@ public class TableTest {
         assertHTableTime / counter, assertHTableTime / counter / 156672);
   }
 
+  @Test
+  public void mtFillAndCheckTest() throws Exception {
+    for (int n = 0; n < 10000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
+      final MemTable memTable = new MemTable(1);
+
+      final Striped<Lock> striped = Striped.lazyWeakLock(64);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new CheckedAdder(memTable, map, striped)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertEquals(156_672, memTable.size());
+      assertTrue(memTable.memorySize() <= 67_109_064);
+      assertTrue(memTable.isFilled());
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      assertTable(map, Collections.emptySet(), memTable, digest);
+    }
+  }
+
+  @Test
+  public void mtFullTest() throws Exception {
+    for (int n = 0; n < 50000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final MemTable memTable = new MemTable(1);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new Adder(memTable)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertEquals(156_672, memTable.size());
+      assertTrue(memTable.memorySize() <= 67_109_064);
+      assertTrue(memTable.isFilled());
+    }
+  }
+
   private Set<ByteHolder> generateNNotExistingEntries(int n, Map<ByteHolder, ByteHolder> entries, Random random) {
     Set<ByteHolder> nonExisting = new HashSet<>();
     while (nonExisting.size() < n) {
@@ -142,7 +199,7 @@ public class TableTest {
     return nonExisting;
   }
 
-  private byte[] generateKey(Random random) {
+  private static byte[] generateKey(Random random) {
     final int keySize = random.nextInt(17) + 8;
     final byte[] key = new byte[keySize];
     random.nextBytes(key);
@@ -163,7 +220,7 @@ public class TableTest {
     return entries;
   }
 
-  private byte[] generateValue(Random random) {
+  private static byte[] generateValue(Random random) {
     final int valueSize = random.nextInt(30) + 15;
     final byte[] value = new byte[valueSize];
     random.nextBytes(value);
@@ -219,6 +276,79 @@ public class TableTest {
     @Override
     public int hashCode() {
       return Arrays.hashCode(bytes);
+    }
+  }
+
+  private final class CheckedAdder implements Callable<Void> {
+    private final MemTable                                  memTable;
+    private final ConcurrentHashMap<ByteHolder, ByteHolder> map;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+    private final Striped<Lock> striped;
+
+    private CheckedAdder(MemTable memTable, ConcurrentHashMap<ByteHolder, ByteHolder> map, Striped<Lock> striped) throws Exception {
+      this.memTable = memTable;
+      this.map = map;
+      this.striped = striped;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() throws Exception {
+      while (true) {
+        final byte[] key = generateKey(random);
+        final byte[] value = generateValue(random);
+
+        messageDigest.reset();
+
+        ByteHolder keyHolder = new ByteHolder(key);
+        ByteHolder valueHolder = new ByteHolder(value);
+
+        final Lock lock = striped.get(key);
+        lock.lock();
+        try {
+          byte[] sha1 = messageDigest.digest(key);
+          final boolean put = memTable.put(sha1, key, value);
+          if (put) {
+            map.put(keyHolder, valueHolder);
+          } else {
+            break;
+          }
+        } finally {
+          lock.unlock();
+        }
+      }
+
+      return null;
+    }
+  }
+
+  private final class Adder implements Callable<Void> {
+    private final MemTable memTable;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+
+    private Adder(MemTable memTable) throws Exception {
+      this.memTable = memTable;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() {
+      while (true) {
+        final byte[] key = generateKey(random);
+        final byte[] value = generateValue(random);
+
+        messageDigest.reset();
+
+        final byte[] sha1 = messageDigest.digest(key);
+        final boolean put = memTable.put(sha1, key, value);
+        if (!put) {
+          break;
+        }
+      }
+
+      return null;
     }
   }
 }

@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 public class MemTable implements Table {
   @SuppressWarnings("NumericOverflow")
-  private static final long OVERFLOW_BIT      = 1L << 63;
+  private static final long FILL_BIT          = 1L << 63;
   private static final int  HEAP_DATA_OFFSET  = BUCKET_SIZE * BUCKETS_COUNT;
   private static final long ENTRY_COUNT_MASK  = 0x7FFFFL;
   private static final int  TABLE_SIZE_OFFSET = 19;
@@ -38,7 +38,7 @@ public class MemTable implements Table {
   }
 
   public boolean put(byte[] sha1, byte[] key, byte[] value) {
-    if ((state.get() & OVERFLOW_BIT) != 0) {
+    if ((state.get() & FILL_BIT) != 0) {
       return false;
     }
 
@@ -48,9 +48,9 @@ public class MemTable implements Table {
 
       while (true) {
         final long state = this.state.get();
-        final boolean overflow = (state & OVERFLOW_BIT) != 0;
+        final boolean filled = (state & FILL_BIT) != 0;
 
-        if (overflow) {
+        if (filled) {
           return false;
         }
 
@@ -70,7 +70,7 @@ public class MemTable implements Table {
         }
 
         if (newSize > MAX_SIZE || newEntries > MAX_ENTRIES) {
-          final long newState = state | OVERFLOW_BIT;
+          final long newState = state | FILL_BIT;
 
           if (this.state.compareAndSet(state, newState)) {
             return false;
@@ -92,8 +92,8 @@ public class MemTable implements Table {
       if (sizeDiff != 0) {
         while (true) {
           final long state = this.state.get();
-          if ((state & OVERFLOW_BIT) != 0) {
-            return true;//we have already added item so for current call there is no overflow but no reason to track size anymore
+          if ((state & FILL_BIT) != 0) {
+            return true;//we have already added item so for current call there is no fill but no reason to track size anymore
           }
 
           final long entries = state & ENTRY_COUNT_MASK;
@@ -102,7 +102,7 @@ public class MemTable implements Table {
           assert entries <= MAX_ENTRIES;
 
           if (size + sizeDiff > MAX_SIZE) {
-            final long newState = state | OVERFLOW_BIT;
+            final long newState = state | FILL_BIT;
 
             if (this.state.compareAndSet(state, newState)) {
               return true;
@@ -144,11 +144,25 @@ public class MemTable implements Table {
     return id;
   }
 
-  public SerializedHTable toHTable() {
-    long size = HEAP_DATA_OFFSET;
+  int size() {
+    return map.size();
+  }
+
+  int memorySize() {
+    int size = HEAP_DATA_OFFSET;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
       size += 4 + entry.getKey().key.length + entry.getValue().length;
     }
+
+    return size;
+  }
+
+  boolean isFilled() {
+    return (state.get() & FILL_BIT) != 0;
+  }
+
+  public SerializedHTable toHTable() {
+    int size = memorySize();
 
     final long ptr = Native.malloc(size);
 

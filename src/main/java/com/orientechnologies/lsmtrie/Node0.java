@@ -1,12 +1,12 @@
 package com.orientechnologies.lsmtrie;
 
-import com.sun.jna.Platform;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Semaphore;
@@ -14,19 +14,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Node0 implements Node {
-  private final int        level;
   private final long       id;
-  private final AtomicLong idGen;
+  private final AtomicLong nodeIdGen;
   private final Semaphore  compactionCounter;
 
   private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables     = new ConcurrentSkipListMap<>();
   private final ConcurrentHashMap<Long, HTableFile>                 tableFiles = new ConcurrentHashMap<>();
   private final AtomicReference<NodeN[]>                            children   = new AtomicReference<>();
 
-  Node0(int level, long id, AtomicLong idGen, Semaphore compactionCounter) {
-    this.level = level;
+  Node0(long id, AtomicLong nodeIdGen, Semaphore compactionCounter) {
     this.id = id;
-    this.idGen = idGen;
+    this.nodeIdGen = nodeIdGen;
     this.compactionCounter = compactionCounter;
   }
 
@@ -35,11 +33,12 @@ public class Node0 implements Node {
   }
 
   public void updateTable(HTable table, HTableFile hTableFile) {
+    tableFiles.put(table.getId(), hTableFile);
+
     final AtomicReference<Table> tableRef = tables.get(table.getId());
     assert tableRef != null;
     tableRef.set(table);
 
-    tableFiles.put(table.getId(), hTableFile);
     compactionCounter.release(1);
   }
 
@@ -71,7 +70,7 @@ public class Node0 implements Node {
 
     final NodeN[] children = this.children.get();
     if (children != null) {
-      final NodeN child = children[HashUtils.childNodeIndex(level + 1, sha1)];
+      final NodeN child = children[HashUtils.childNodeIndex(1, sha1)];
       return child.get(key, sha1);
     }
 
@@ -86,7 +85,7 @@ public class Node0 implements Node {
 
     NodeN[] children = new NodeN[8];
     for (int i = 0; i < children.length; i++) {
-      children[i] = new NodeN(level + 1, idGen.getAndIncrement(), idGen);
+      children[i] = new NodeN(1, nodeIdGen.getAndIncrement(), nodeIdGen);
     }
 
     if (this.children.compareAndSet(null, children)) {
@@ -131,7 +130,71 @@ public class Node0 implements Node {
 
   @Override
   public int getLevel() {
-    return level;
+    return 0;
+  }
+
+  @Override
+  public NodeMetadata getMetadata() {
+    final List<Long> tableIdList = new ArrayList<>();
+
+    for (Map.Entry<Long, AtomicReference<Table>> entry : tables.entrySet()) {
+      final AtomicReference<Table> tableRef = entry.getValue();
+      final Table table = tableRef.get();
+      if (table instanceof HTable) {
+        tableIdList.add(entry.getKey());
+      }
+    }
+
+    final String[] bloomFilterFiles = new String[tableIdList.size()];
+    final String[] htableFiles = new String[tableIdList.size()];
+
+    int counter = 0;
+    for (Long nodeId : tableIdList) {
+      final HTableFile hTableFile = tableFiles.get(nodeId);
+      bloomFilterFiles[counter] = hTableFile.getBloomFilterPath().toAbsolutePath().toString();
+      htableFiles[counter] = hTableFile.getHtablePath().toAbsolutePath().toString();
+      counter++;
+    }
+
+    final long[] tableIds = new long[tableIdList.size()];
+    for (int i = 0; i < tableIds.length; i++) {
+      tableIds[i] = tableIdList.get(i);
+    }
+
+    return new NodeMetadata(id, 0, bloomFilterFiles, htableFiles, tableIds);
+  }
+
+  @Override
+  public boolean hasChildren() {
+    return children.get() != null;
+  }
+
+  @Override
+  public void setChild(int index, NodeN child) {
+    final NodeN[] children = this.children.get();
+    final NodeN[] newChildren = new NodeN[8];
+
+    if (child != null) {
+      System.arraycopy(children, 0, newChildren, 0, children.length);
+    }
+
+    if (newChildren[index] != null) {
+      throw new IllegalStateException("Child with index " + index + " is already set");
+    }
+
+    newChildren[index] = child;
+    if (!this.children.compareAndSet(children, newChildren)) {
+      throw new IllegalStateException("Children of the node were concurrently updated");
+    }
+  }
+
+  @Override
+  public void addHTable(HTable hTable, HTableFile hTableFile) {
+    final AtomicReference<Table> tableRef = new AtomicReference<>(hTable);
+    tableFiles.put(hTable.getId(), hTableFile);
+    tables.put(hTable.getId(), tableRef);
+
+    compactionCounter.release(1);
   }
 
   public void delete() {

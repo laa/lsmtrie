@@ -1,7 +1,5 @@
 package com.orientechnologies.lsmtrie;
 
-import com.sun.jna.Platform;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -19,12 +17,12 @@ public class NodeN implements Node {
 
   private final int        level;
   private final long       id;
-  private final AtomicLong idGen;
+  private final AtomicLong nodeIdGen;
 
-  NodeN(int level, long id, AtomicLong idGen) {
+  NodeN(int level, long id, AtomicLong nodeIdGen) {
     this.level = level;
     this.id = id;
-    this.idGen = idGen;
+    this.nodeIdGen = nodeIdGen;
   }
 
   public void addHTable(HTable hTable, HTableFile hTableFile) {
@@ -64,7 +62,7 @@ public class NodeN implements Node {
 
     NodeN[] children = new NodeN[8];
     for (int i = 0; i < children.length; i++) {
-      children[i] = new NodeN(level + 1, idGen.getAndIncrement(), idGen);
+      children[i] = new NodeN(level + 1, nodeIdGen.getAndIncrement(), nodeIdGen);
     }
 
     if (this.children.compareAndSet(null, children)) {
@@ -124,6 +122,54 @@ public class NodeN implements Node {
 
   public int getLevel() {
     return level;
+  }
+
+  @Override
+  public NodeMetadata getMetadata() {
+    final List<Long> tableIdsList = new ArrayList<>(tables.keySet());
+
+    final String[] bloomFiles = new String[tableIdsList.size()];
+    final String[] htableFiles = new String[tableIdsList.size()];
+
+    int counter = 0;
+    for (Long tableId : tableIdsList) {
+      final HTableFile file = tableFiles.get(tableId);
+
+      bloomFiles[counter] = file.getBloomFilterPath().toAbsolutePath().toString();
+      htableFiles[counter] = file.getHtablePath().toAbsolutePath().toString();
+      counter++;
+    }
+
+    final long[] tableIds = new long[tableIdsList.size()];
+    for (int i = 0; i < tableIds.length; i++) {
+      tableIds[i] = tableIdsList.get(i);
+    }
+
+    return new NodeMetadata(id, level, bloomFiles, htableFiles, tableIds);
+  }
+
+  @Override
+  public void setChild(int index, NodeN child) {
+    final NodeN[] children = this.children.get();
+    final NodeN[] newChildren = new NodeN[8];
+
+    if (child != null) {
+      System.arraycopy(children, 0, newChildren, 0, children.length);
+    }
+
+    if (newChildren[index] != null) {
+      throw new IllegalStateException("Child with index " + index + " is already set");
+    }
+
+    newChildren[index] = child;
+    if (!this.children.compareAndSet(children, newChildren)) {
+      throw new IllegalStateException("Children of the node were concurrently updated");
+    }
+  }
+
+  @Override
+  public boolean hasChildren() {
+    return children.get() != null;
   }
 
   public boolean isHtableLimitReached() {

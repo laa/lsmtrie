@@ -33,13 +33,14 @@ public class LSMTrieTest {
 
   @Test
   public void testAddNkeys() throws Exception {
-    int n = 2 * 8 * 8 * 156_672;
+    int n = /* 2 * 8 * 8 */ 156_672;
 
     final long seed = System.nanoTime();
     System.out.println("testAddNkeys (" + n + " keys) seed: " + seed);
 
     final Random random = new Random(seed);
-    final OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    lsmTrie.load();
 
     System.out.println("Entries generation started");
     Map<ByteHolder, ByteHolder> data = generateNEntries(n, random);
@@ -56,13 +57,21 @@ public class LSMTrieTest {
 
     Set<ByteHolder> nonExistingData = generateNNotExistingEntries(10000, data, random);
 
-    for (int k = 0; k < 10; k++) {
+    for (int k = 0; k < 5; k++) {
       System.out.printf("%d check \n", k + 1);
       long assertStart = System.nanoTime();
       assertTable(data, nonExistingData, lsmTrie);
       long assertEnd = System.nanoTime();
-      System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n, n * 1000_000_000L / (assertEnd - assertStart));
+      System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n,
+          n * 1000_000_000L / (assertEnd - assertStart));
     }
+
+    lsmTrie.close();
+
+    lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    lsmTrie.load();
+
+    assertTable(data, nonExistingData, lsmTrie);
 
     lsmTrie.delete();
   }
@@ -134,6 +143,10 @@ public class LSMTrieTest {
 
   private void assertTable(Map<ByteHolder, ByteHolder> existingValues, Set<ByteHolder> absentValues, OLSMTrie table) {
     for (Map.Entry<ByteHolder, ByteHolder> entry : existingValues.entrySet()) {
+      if(table.get(entry.getKey().bytes) == null) {
+        table.get(entry.getKey().bytes);
+      }
+
       assertArrayEquals(entry.getValue().bytes, table.get(entry.getKey().bytes));
     }
 

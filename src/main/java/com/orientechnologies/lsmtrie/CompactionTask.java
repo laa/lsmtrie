@@ -83,8 +83,11 @@ public class CompactionTask extends RecursiveAction {
     }
 
     if (node instanceof Node0) {
-      boolean acquired = compactionCounter.tryAcquire(hTables.size() - 8);
-      assert acquired;
+      try {
+        compactionCounter.acquire(hTables.size() - 8);
+      } catch (InterruptedException e) {
+        return;
+      }
     }
     for (HTable hTable : hTables) {
       boolean isMoved = false;
@@ -113,8 +116,7 @@ public class CompactionTask extends RecursiveAction {
             convert.invoke();
 
             final HTable newTable = convert.gethTable();
-            child.addHTable(newTable,
-                new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
+            child.addHTable(newTable, new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
 
             memTables[i] = new MemTable(tableIdGen.getAndIncrement());
           }
@@ -144,8 +146,7 @@ public class CompactionTask extends RecursiveAction {
         convert.invoke();
 
         final HTable newTable = convert.gethTable();
-        child.addHTable(newTable,
-            new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
+        child.addHTable(newTable, new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
       }
     }
 

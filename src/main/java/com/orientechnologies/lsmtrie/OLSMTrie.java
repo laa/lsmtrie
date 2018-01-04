@@ -1,5 +1,7 @@
 package com.orientechnologies.lsmtrie;
 
+import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
+
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -25,9 +27,9 @@ public class OLSMTrie {
   private final AtomicLong tableIdGen            = new AtomicLong();
   private final AtomicLong nodeIdGen             = new AtomicLong();
   private final Semaphore  allowedQueueMemtables = new Semaphore(2);
-  private final Node0          node0;
-  private final CompactionTask compactionTask;
+  private volatile Node0 node0;
   private final AtomicBoolean stopCompaction = new AtomicBoolean();
+  private final Registry registry;
 
   private final Semaphore compactionCounter = new Semaphore(0);
 
@@ -41,24 +43,44 @@ public class OLSMTrie {
     }
   });
 
-  OLSMTrie(String name, Path root) throws IOException {
+  OLSMTrie(String name, Path root) {
     this.name = name;
     this.root = root;
+    this.registry = new Registry(root, name);
+  }
 
+  public void load() throws IOException {
     Files.createDirectories(root);
+
+    node0 = registry.load(nodeIdGen, tableIdGen, compactionCounter);
 
     final long tableId = tableIdGen.getAndIncrement();
     final MemTable table = new MemTable(tableId);
 
     current.set(table);
 
-    node0 = new Node0(0, nodeIdGen.getAndIncrement(), nodeIdGen, compactionCounter);
     node0.addMemTable(table);
-    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root);
+
+    final CompactionTask compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root);
     compactionPool.submit(compactionTask);
   }
 
   public void close() {
+    stopCompaction.set(true);
+    serviceThreads.shutdown();
+
+    try {
+      if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
+        throw new IllegalStateException("Can not terminate service threads");
+      }
+    } catch (InterruptedException e) {
+      return;
+    }
+
+    if (!compactionPool.awaitQuiescence(1, TimeUnit.HOURS)) {
+      throw new IllegalStateException("Can not terminate compaction threads");
+    }
+
     final MemTable memTable = current.get();
     memTable.waitTillZeroModifiers();
 
@@ -75,17 +97,13 @@ public class OLSMTrie {
 
     node0.updateTable(hTable, new HTableFile(bloomFilterPath, htablePath));
 
-    stopCompaction.set(true);
-    serviceThreads.shutdown();
     try {
-      if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
-        throw new IllegalStateException("Can not terminate service threads");
-      }
-    } catch (InterruptedException e) {
-      return;
+      registry.save(node0);
+      node0.close();
+      registry.close();
+    } catch (IOException e) {
+      throw new IllegalStateException("Can not save trei state", e);
     }
-
-    node0.close();
   }
 
   public void delete() {
@@ -100,6 +118,11 @@ public class OLSMTrie {
     }
 
     node0.delete();
+    try {
+      registry.delete();
+    } catch (IOException e) {
+      throw new IllegalStateException("Can not delete trei configuration", e);
+    }
   }
 
   public void put(byte[] key, byte[] value) {

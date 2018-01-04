@@ -19,15 +19,16 @@ class HashUtils {
   }
 
   public static int childNodeIndex(int level, byte[] sha1) {
-    final int offset = level * 3;//3 bits per level
+    final int offset = (level - 1) * 3;//3 bits per level
     final int bytes = offset / 8;
 
     final int bitsOffset = offset - bytes * 8;
     if (bitsOffset < 6) {
-      return (0xFF & sha1[sha1.length - bytes - 1]) >>> (8 - bitsOffset);
+      return ((0xFF & sha1[sha1.length - bytes - 1]) >>> (5 - bitsOffset)) & 0x7;
     } else {
-      final int firstPart = ((0xFF & sha1[sha1.length - bytes - 1]) >>> 5) & (1 << bitsOffset - 5);
-      final int secondPart = (0xFF & sha1[sha1.length - bytes - 2]) >>> (8 - (bitsOffset - 5));
+      final int firstOffset = 8 - bitsOffset;
+      final int firstPart =  (0xFF & sha1[sha1.length - bytes - 1]) & (0x7 >>> (3 - firstOffset));
+      final int secondPart = (0xFF & sha1[sha1.length - bytes - 2]) >>> (8 - (3 - firstOffset));
       return firstPart | secondPart;
     }
   }

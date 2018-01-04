@@ -71,10 +71,9 @@ public class OLSMTrie {
 
     final Path htablePath = convertToHTableAction.getHtablePath();
     final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
-    final FileChannel htableChannel = convertToHTableAction.getHtableChannel();
     final HTable hTable = convertToHTableAction.gethTable();
 
-    node0.updateTable(hTable, new HTableFileChannel(bloomFilterPath, htablePath, htableChannel));
+    node0.updateTable(hTable, new HTableFile(bloomFilterPath, htablePath));
 
     stopCompaction.set(true);
     serviceThreads.shutdown();
@@ -155,10 +154,9 @@ public class OLSMTrie {
         final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name).invoke();
         final Path htablePath = convertToHTableAction.getHtablePath();
         final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
-        final FileChannel htableChannel = convertToHTableAction.getHtableChannel();
         final HTable hTable = convertToHTableAction.gethTable();
 
-        node0.updateTable(hTable, new HTableFileChannel(bloomFilterPath, htablePath, htableChannel));
+        node0.updateTable(hTable, new HTableFile(bloomFilterPath, htablePath));
 
         allowedQueueMemtables.release();
       } catch (Exception | Error e) {

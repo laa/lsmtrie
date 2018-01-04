@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Semaphore;
@@ -20,9 +19,9 @@ public class Node0 implements Node {
   private final AtomicLong idGen;
   private final Semaphore  compactionCounter;
 
-  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables        = new ConcurrentSkipListMap<>();
-  private final ConcurrentHashMap<Long, HTableFileChannel>          tableChannels = new ConcurrentHashMap<>();
-  private final AtomicReference<NodeN[]>                            children      = new AtomicReference<>();
+  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables     = new ConcurrentSkipListMap<>();
+  private final ConcurrentHashMap<Long, HTableFile>                 tableFiles = new ConcurrentHashMap<>();
+  private final AtomicReference<NodeN[]>                            children   = new AtomicReference<>();
 
   Node0(int level, long id, AtomicLong idGen, Semaphore compactionCounter) {
     this.level = level;
@@ -35,30 +34,26 @@ public class Node0 implements Node {
     tables.put(table.getId(), new AtomicReference<>(table));
   }
 
-  public void updateTable(HTable table, HTableFileChannel hTableFileChannel) {
+  public void updateTable(HTable table, HTableFile hTableFile) {
     final AtomicReference<Table> tableRef = tables.get(table.getId());
     assert tableRef != null;
     tableRef.set(table);
 
-    tableChannels.put(table.getId(), hTableFileChannel);
+    tableFiles.put(table.getId(), hTableFile);
     compactionCounter.release(1);
   }
 
   public void removeTable(long id) {
-    tables.remove(id);
-    final HTableFileChannel hTableFileChannel = tableChannels.remove(id);
-    if (hTableFileChannel != null) {
-      try {
-        hTableFileChannel.getChannel().close();
-        try {
-          Files.delete(hTableFileChannel.getHtablePath());
-        } catch (IOException e) {
-          if (Platform.isWindows()) {
-            System.out.println("Can not delete htable file on windows");
-          }
-        }
+    final AtomicReference<Table> table = tables.remove(id);
+    if (table.get() instanceof HTable) {
+      ((HTable) table.get()).clearBuffer();
+    }
 
-        Files.delete(hTableFileChannel.getBloomFilterPath());
+    final HTableFile hTableFile = tableFiles.remove(id);
+    if (hTableFile != null) {
+      try {
+        Files.delete(hTableFile.getHtablePath());
+        Files.delete(hTableFile.getBloomFilterPath());
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }
@@ -102,11 +97,10 @@ public class Node0 implements Node {
   }
 
   public void close() {
-    for (HTableFileChannel hTableFileChannel : tableChannels.values()) {
-      try {
-        hTableFileChannel.getChannel().close();
-      } catch (IOException e) {
-        throw new IllegalStateException("Error during channel close", e);
+    for (AtomicReference<Table> hTableRef : tables.values()) {
+      final Table table = hTableRef.get();
+      if (table instanceof HTable) {
+        ((HTable) table).clearBuffer();
       }
     }
 
@@ -118,13 +112,12 @@ public class Node0 implements Node {
     }
   }
 
-  public List<HTable> getNOldestHTables(int n) {
+  public List<HTable> getNOldestHTables(int limit) {
     final List<HTable> result = new ArrayList<>();
-    final Iterator<AtomicReference<Table>> entries = tables.values().iterator();
-    int counter = 0;
+    final Iterator<AtomicReference<Table>> values = tables.values().iterator();
 
-    while (entries.hasNext() && counter < n) {
-      final AtomicReference<Table> tableRef = entries.next();
+    while (values.hasNext() && result.size() < limit) {
+      final AtomicReference<Table> tableRef = values.next();
       final Table table = tableRef.get();
       if (table instanceof MemTable) {
         break;
@@ -142,18 +135,17 @@ public class Node0 implements Node {
   }
 
   public void delete() {
-    for (HTableFileChannel hTableFileChannel : tableChannels.values()) {
-      try {
-        hTableFileChannel.getChannel().close();
-        Files.delete(hTableFileChannel.getBloomFilterPath());
-        try {
-          Files.delete(hTableFileChannel.getHtablePath());
-        } catch (IOException e) {
-          if (Platform.isWindows()) {
-            System.out.println("Can not delete htable file on windows");
-          }
-        }
+    for (AtomicReference<Table> hTableRef : tables.values()) {
+      final Table table = hTableRef.get();
+      if (table instanceof HTable) {
+        ((HTable) table).clearBuffer();
+      }
+    }
 
+    for (HTableFile hTableFile : tableFiles.values()) {
+      try {
+        Files.delete(hTableFile.getBloomFilterPath());
+        Files.delete(hTableFile.getHtablePath());
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }

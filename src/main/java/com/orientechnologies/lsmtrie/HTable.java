@@ -1,6 +1,8 @@
 package com.orientechnologies.lsmtrie;
 
 import com.google.common.hash.BloomFilter;
+import sun.misc.Cleaner;
+import sun.nio.ch.DirectBuffer;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -67,6 +69,14 @@ public class HTable implements Table {
   @Override
   public long getId() {
     return id;
+  }
+
+  public void clearBuffer() {
+    final DirectBuffer dbf = (DirectBuffer)buffer;
+    final Cleaner cleaner = dbf.cleaner();
+    if (cleaner != null) {
+      cleaner.clean();
+    }
   }
 
   private byte[] readValueFormBucket(byte[] key, byte[] sha1, int index) {

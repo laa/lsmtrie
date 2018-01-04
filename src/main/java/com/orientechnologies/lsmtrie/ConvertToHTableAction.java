@@ -11,11 +11,10 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 class ConvertToHTableAction {
-  private       Path        bloomFilterPath;
-  private       Path        htablePath;
-  private       FileChannel htableChannel;
-  private       HTable      hTable;
-  private final Path        root;
+  private       Path   bloomFilterPath;
+  private       Path   htablePath;
+  private       HTable hTable;
+  private final Path   root;
 
   private final MemTable memTable;
   private final String   name;
@@ -28,10 +27,6 @@ class ConvertToHTableAction {
 
   public Path getHtablePath() {
     return htablePath;
-  }
-
-  public FileChannel getHtableChannel() {
-    return htableChannel;
   }
 
   public HTable gethTable() {
@@ -62,13 +57,16 @@ class ConvertToHTableAction {
     }
 
     htablePath = root.resolve(htableName);
-    htableChannel = FileChannel.open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ);
-    htableChannel.write(serializedHTable.getHtableBuffer());
-    serializedHTable.free();
-    htableChannel.force(true);
+    try (FileChannel htableChannel = FileChannel
+        .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
+      htableChannel.write(serializedHTable.getHtableBuffer());
+      serializedHTable.free();
+      htableChannel.force(true);
 
-    hTable = new HTable(serializedHTable.getBloomFilters(),
-        htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId);
+      hTable = new HTable(serializedHTable.getBloomFilters(),
+          htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId);
+    }
+
     return this;
   }
 }

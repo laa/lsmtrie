@@ -7,16 +7,15 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class NodeN implements Node {
-  private final ConcurrentSkipListMap<Long, HTable>        tables        = new ConcurrentSkipListMap<>();
-  private final ConcurrentHashMap<Long, HTableFileChannel> tableChannels = new ConcurrentHashMap<>();
-  private final AtomicReference<NodeN[]>                   children      = new AtomicReference<>();
+  private final ConcurrentSkipListMap<Long, HTable> tables     = new ConcurrentSkipListMap<>();
+  private final ConcurrentHashMap<Long, HTableFile> tableFiles = new ConcurrentHashMap<>();
+  private final AtomicReference<NodeN[]>            children   = new AtomicReference<>();
 
   private final int        level;
   private final long       id;
@@ -28,9 +27,9 @@ public class NodeN implements Node {
     this.idGen = idGen;
   }
 
-  public void addHTable(HTable hTable, HTableFileChannel hTableFileChannel) {
+  public void addHTable(HTable hTable, HTableFile hTableFile) {
     tables.put(hTable.getId(), hTable);
-    tableChannels.put(hTable.getId(), hTableFileChannel);
+    tableFiles.put(hTable.getId(), hTableFile);
   }
 
   public byte[] get(byte[] key, byte[] sha1) {
@@ -51,12 +50,8 @@ public class NodeN implements Node {
   }
 
   public void close() {
-    for (HTableFileChannel hTableFileChannel : tableChannels.values()) {
-      try {
-        hTableFileChannel.getChannel().close();
-      } catch (IOException e) {
-        throw new IllegalStateException("Can not close file channel", e);
-      }
+    for (HTable hTable : tables.values()) {
+      hTable.clearBuffer();
     }
   }
 
@@ -80,53 +75,40 @@ public class NodeN implements Node {
   }
 
   @Override
-  public List<HTable> getNOldestHTables(int n) {
+  public List<HTable> getNOldestHTables(int limit) {
     final List<HTable> result = new ArrayList<>();
-    final Iterator<HTable> entries = tables.values().iterator();
-    int counter = 0;
+    final Iterator<HTable> values = tables.values().iterator();
 
-    while (entries.hasNext() && counter < n) {
-      final HTable table = entries.next();
-      result.add(table);
+    while (values.hasNext() && result.size() < limit) {
+      final HTable hTable = values.next();
+      result.add(hTable);
     }
-
     return result;
-
   }
 
   @Override
   public void removeTable(long id) {
-    tables.remove(id);
-    final HTableFileChannel hTableFileChannel = tableChannels.remove(id);
-    try {
-      hTableFileChannel.getChannel().close();
-      try {
-        Files.delete(hTableFileChannel.getHtablePath());
-      } catch (IOException e) {
-        if (Platform.isWindows()) {
-          System.out.println("Can not delete htable file on windows");
-        }
-      }
+    HTable hTable = tables.remove(id);
+    hTable.clearBuffer();
 
-      Files.delete(hTableFileChannel.getBloomFilterPath());
+    final HTableFile hTableFile = tableFiles.remove(id);
+    try {
+      Files.delete(hTableFile.getHtablePath());
+      Files.delete(hTableFile.getBloomFilterPath());
     } catch (IOException e) {
       throw new IllegalStateException("Error during deletion of htable");
     }
   }
 
   public void delete() {
-    for (HTableFileChannel hTableFileChannel : tableChannels.values()) {
-      try {
-        hTableFileChannel.getChannel().close();
-        Files.delete(hTableFileChannel.getBloomFilterPath());
-        try {
-          Files.delete(hTableFileChannel.getHtablePath());
-        } catch (IOException e) {
-          if (Platform.isWindows()) {
-            System.out.println("Can not delete htable file on windows");
-          }
-        }
+    for (HTable table : tables.values()) {
+      table.clearBuffer();
+    }
 
+    for (HTableFile hTableFile : tableFiles.values()) {
+      try {
+        Files.delete(hTableFile.getBloomFilterPath());
+        Files.delete(hTableFile.getHtablePath());
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }

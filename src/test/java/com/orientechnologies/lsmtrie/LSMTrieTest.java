@@ -33,7 +33,7 @@ public class LSMTrieTest {
 
   @Test
   public void testAddNkeys() throws Exception {
-    int n = 9 * 156_672;
+    int n = 2 * 8 * 8 * 156_672;
 
     final long seed = System.nanoTime();
     System.out.println("testAddNkeys (" + n + " keys) seed: " + seed);
@@ -41,7 +41,9 @@ public class LSMTrieTest {
     final Random random = new Random(seed);
     final OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
 
+    System.out.println("Entries generation started");
     Map<ByteHolder, ByteHolder> data = generateNEntries(n, random);
+    System.out.println("Entries generation completed");
 
     long fillStart = System.nanoTime();
     for (Map.Entry<ByteHolder, ByteHolder> entry : data.entrySet()) {
@@ -49,15 +51,17 @@ public class LSMTrieTest {
     }
     long fillEnd = System.nanoTime();
 
-    System.out.printf("Load speed for %d items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
+    System.out.printf("Load speed for %d, items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
         n * 1000_000_000L / (fillEnd - fillStart));
 
-    Set<ByteHolder> nonExistingData = generateNNotExistingEntries(n, data, random);
+    Set<ByteHolder> nonExistingData = generateNNotExistingEntries(10000, data, random);
 
-    for (int k = 0; k < 20; k++) {
+    for (int k = 0; k < 10; k++) {
       System.out.printf("%d check \n", k + 1);
+      long assertStart = System.nanoTime();
       assertTable(data, nonExistingData, lsmTrie);
-      Thread.sleep(10);
+      long assertEnd = System.nanoTime();
+      System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n, n * 1000_000_000L / (assertEnd - assertStart));
     }
 
     lsmTrie.delete();
@@ -130,9 +134,6 @@ public class LSMTrieTest {
 
   private void assertTable(Map<ByteHolder, ByteHolder> existingValues, Set<ByteHolder> absentValues, OLSMTrie table) {
     for (Map.Entry<ByteHolder, ByteHolder> entry : existingValues.entrySet()) {
-      if (table.get(entry.getKey().bytes) == null) {
-        table.get(entry.getKey().bytes);
-      }
       assertArrayEquals(entry.getValue().bytes, table.get(entry.getKey().bytes));
     }
 

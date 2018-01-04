@@ -23,6 +23,7 @@ public class CompactionTask extends RecursiveAction {
   private final Node0                node0;
   private final AtomicLong           tableIdGen;
   private final Path                 root;
+  private final Set<NodeN> compactionSet = new HashSet<>();
 
   CompactionTask(String name, Semaphore compactionCounter, AtomicBoolean stop, Node0 node0, AtomicLong tableIdGen, Path root) {
     this.name = name;
@@ -47,9 +48,12 @@ public class CompactionTask extends RecursiveAction {
           } else {
             final NodeN node = compactionQueue.poll();
             if (node != null) {
+              compactionSet.remove(node);
               moveHTablesDown(node);
+
               if (node.isHtableLimitReached()) {
                 compactionQueue.add(node);
+                compactionSet.add(node);
               }
             }
           }
@@ -66,12 +70,22 @@ public class CompactionTask extends RecursiveAction {
   }
 
   private void moveHTablesDown(Node node) throws IOException {
+    System.out.println("Compaction is started");
     final MemTable[] memTables = new MemTable[8];
     for (int i = 0; i < memTables.length; i++) {
       memTables[i] = new MemTable(tableIdGen.getAndIncrement());
     }
 
-    List<HTable> hTables = node.getNOldestHTables(8);
+    final List<HTable> hTables = node.getNOldestHTables(1024);
+    if (hTables.size() < 8) {
+      System.out.println("Compaction is finished nothing to compact");
+      return;
+    }
+
+    if (node instanceof Node0) {
+      boolean acquired = compactionCounter.tryAcquire(hTables.size() - 8);
+      assert acquired;
+    }
     for (HTable hTable : hTables) {
       boolean isMoved = false;
 
@@ -100,7 +114,7 @@ public class CompactionTask extends RecursiveAction {
 
             final HTable newTable = convert.gethTable();
             child.addHTable(newTable,
-                new HTableFileChannel(convert.getBloomFilterPath(), convert.getHtablePath(), convert.getHtableChannel()));
+                new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
 
             memTables[i] = new MemTable(tableIdGen.getAndIncrement());
           }
@@ -131,7 +145,7 @@ public class CompactionTask extends RecursiveAction {
 
         final HTable newTable = convert.gethTable();
         child.addHTable(newTable,
-            new HTableFileChannel(convert.getBloomFilterPath(), convert.getHtablePath(), convert.getHtableChannel()));
+            new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
       }
     }
 
@@ -140,9 +154,11 @@ public class CompactionTask extends RecursiveAction {
     }
 
     for (NodeN child : children) {
-      if (child.isHtableLimitReached()) {
+      if (child.isHtableLimitReached() && !compactionSet.contains(child)) {
         compactionQueue.add(child);
+        compactionSet.add(child);
       }
     }
+    System.out.println("Compaction is finished");
   }
 }

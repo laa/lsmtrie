@@ -58,7 +58,7 @@ public class TableTest {
         long toHTableEnd = System.nanoTime();
 
         final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer().asReadOnlyBuffer(),
-            1);
+            1, null, null);
 
         long assertHTableStart = System.nanoTime();
         assertTable(entries, nonExisting, hTable, digest);
@@ -123,7 +123,8 @@ public class TableTest {
       final SerializedHTable serializedHTable = memTable.toHTable();
       long toHTableEnd = System.nanoTime();
 
-      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1);
+      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1, null,
+          null);
       long assertHTableStart = System.nanoTime();
       assertTable(data, absentValues, hTable, digest);
       long assertHTableEnd = System.nanoTime();

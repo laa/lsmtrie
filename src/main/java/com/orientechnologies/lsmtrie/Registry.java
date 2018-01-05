@@ -225,9 +225,8 @@ public class Registry {
             htableBuffer = htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, htableChannel.size());
           }
 
-          final HTableFile hTableFile = new HTableFile(bloomFilterPath, htablePath);
-          final HTable hTable = new HTable(bloomFilters, htableBuffer, tableId);
-          node.addHTable(hTable, hTableFile);
+          final HTable hTable = new HTable(bloomFilters, htableBuffer, tableId, bloomFilterPath, htablePath);
+          node.addHTable(hTable);
         }
       }
 

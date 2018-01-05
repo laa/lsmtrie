@@ -17,5 +17,5 @@ public interface Node {
 
   void setChild(int index, NodeN child);
 
-  void addHTable(HTable hTable, HTableFile hTableFile);
+  void addHTable(HTable hTable);
 }

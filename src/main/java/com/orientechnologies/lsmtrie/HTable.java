@@ -6,6 +6,7 @@ import sun.nio.ch.DirectBuffer;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,10 +16,15 @@ public class HTable implements Table {
   private final long                  id;
   private final ConcurrentHashMap<Short, WaterMarkInfo> overloadingMap = new ConcurrentHashMap<>();
 
-  HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id) {
+  private final Path bloomFilterPath;
+  private final Path htablePath;
+
+  HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id, Path bloomFilterPath, Path htablePath) {
     this.bloomFilters = bloomFilters;
     this.buffer = buffer;
     this.id = id;
+    this.bloomFilterPath = bloomFilterPath;
+    this.htablePath = htablePath;
   }
 
   @Override
@@ -72,11 +78,19 @@ public class HTable implements Table {
   }
 
   public void clearBuffer() {
-    final DirectBuffer dbf = (DirectBuffer)buffer;
+    final DirectBuffer dbf = (DirectBuffer) buffer;
     final Cleaner cleaner = dbf.cleaner();
     if (cleaner != null) {
       cleaner.clean();
     }
+  }
+
+  public Path getBloomFilterPath() {
+    return bloomFilterPath;
+  }
+
+  public Path getHtablePath() {
+    return htablePath;
   }
 
   private byte[] readValueFormBucket(byte[] key, byte[] sha1, int index) {

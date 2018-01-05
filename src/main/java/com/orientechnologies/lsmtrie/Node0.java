@@ -3,11 +3,8 @@ package com.orientechnologies.lsmtrie;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
@@ -18,9 +15,8 @@ public class Node0 implements Node {
   private final AtomicLong nodeIdGen;
   private final Semaphore  compactionCounter;
 
-  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables     = new ConcurrentSkipListMap<>();
-  private final ConcurrentHashMap<Long, HTableFile>                 tableFiles = new ConcurrentHashMap<>();
-  private final AtomicReference<NodeN[]>                            children   = new AtomicReference<>();
+  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables   = new ConcurrentSkipListMap<>();
+  private final AtomicReference<NodeN[]>                            children = new AtomicReference<>();
 
   Node0(long id, AtomicLong nodeIdGen, Semaphore compactionCounter) {
     this.id = id;
@@ -32,27 +28,25 @@ public class Node0 implements Node {
     tables.put(table.getId(), new AtomicReference<>(table));
   }
 
-  public void updateTable(HTable table, HTableFile hTableFile) {
-    tableFiles.put(table.getId(), hTableFile);
-
+  public void updateTable(HTable table) {
     final AtomicReference<Table> tableRef = tables.get(table.getId());
     assert tableRef != null;
+
     tableRef.set(table);
 
     compactionCounter.release(1);
   }
 
   public void removeTable(long id) {
-    final AtomicReference<Table> table = tables.remove(id);
-    if (table.get() instanceof HTable) {
-      ((HTable) table.get()).clearBuffer();
-    }
+    final AtomicReference<Table> tableRef = tables.remove(id);
+    final Table table = tableRef.get();
+    if (table instanceof HTable) {
+      final HTable hTable = (HTable) table;
+      hTable.clearBuffer();
 
-    final HTableFile hTableFile = tableFiles.remove(id);
-    if (hTableFile != null) {
       try {
-        Files.delete(hTableFile.getHtablePath());
-        Files.delete(hTableFile.getBloomFilterPath());
+        Files.delete(hTable.getHtablePath());
+        Files.delete(hTable.getBloomFilterPath());
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }
@@ -62,6 +56,7 @@ public class Node0 implements Node {
   public byte[] get(byte[] key, byte[] sha1) {
     for (AtomicReference<Table> tableRef : tables.values()) {
       final Table table = tableRef.get();
+
       final byte[] value = table.get(key, sha1);
       if (value != null) {
         return value;
@@ -96,8 +91,9 @@ public class Node0 implements Node {
   }
 
   public void close() {
-    for (AtomicReference<Table> hTableRef : tables.values()) {
-      final Table table = hTableRef.get();
+    for (AtomicReference<Table> tableRef : tables.values()) {
+      final Table table = tableRef.get();
+
       if (table instanceof HTable) {
         ((HTable) table).clearBuffer();
       }
@@ -122,7 +118,7 @@ public class Node0 implements Node {
         break;
       }
 
-      result.add((HTable) table);
+      result.add(((HTable) table));
     }
 
     return result;
@@ -135,30 +131,25 @@ public class Node0 implements Node {
 
   @Override
   public NodeMetadata getMetadata() {
-    final List<Long> tableIdList = new ArrayList<>();
+    final List<HTable> tableList = new ArrayList<>();
 
-    for (Map.Entry<Long, AtomicReference<Table>> entry : tables.entrySet()) {
-      final AtomicReference<Table> tableRef = entry.getValue();
+    for (AtomicReference<Table> tableRef : tables.values()) {
       final Table table = tableRef.get();
       if (table instanceof HTable) {
-        tableIdList.add(entry.getKey());
+        tableList.add((HTable) table);
       }
     }
 
-    final String[] bloomFilterFiles = new String[tableIdList.size()];
-    final String[] htableFiles = new String[tableIdList.size()];
+    final long[] tableIds = new long[tableList.size()];
+    final String[] bloomFilterFiles = new String[tableList.size()];
+    final String[] htableFiles = new String[tableList.size()];
 
     int counter = 0;
-    for (Long nodeId : tableIdList) {
-      final HTableFile hTableFile = tableFiles.get(nodeId);
-      bloomFilterFiles[counter] = hTableFile.getBloomFilterPath().toAbsolutePath().toString();
-      htableFiles[counter] = hTableFile.getHtablePath().toAbsolutePath().toString();
+    for (HTable hTable : tableList) {
+      tableIds[counter] = hTable.getId();
+      bloomFilterFiles[counter] = hTable.getBloomFilterPath().toAbsolutePath().toString();
+      htableFiles[counter] = hTable.getHtablePath().toAbsolutePath().toString();
       counter++;
-    }
-
-    final long[] tableIds = new long[tableIdList.size()];
-    for (int i = 0; i < tableIds.length; i++) {
-      tableIds[i] = tableIdList.get(i);
     }
 
     return new NodeMetadata(id, 0, bloomFilterFiles, htableFiles, tableIds);
@@ -174,7 +165,7 @@ public class Node0 implements Node {
     final NodeN[] children = this.children.get();
     final NodeN[] newChildren = new NodeN[8];
 
-    if (child != null) {
+    if (children != null) {
       System.arraycopy(children, 0, newChildren, 0, children.length);
     }
 
@@ -189,28 +180,27 @@ public class Node0 implements Node {
   }
 
   @Override
-  public void addHTable(HTable hTable, HTableFile hTableFile) {
+  public void addHTable(HTable hTable) {
     final AtomicReference<Table> tableRef = new AtomicReference<>(hTable);
-    tableFiles.put(hTable.getId(), hTableFile);
     tables.put(hTable.getId(), tableRef);
 
     compactionCounter.release(1);
   }
 
   public void delete() {
-    for (AtomicReference<Table> hTableRef : tables.values()) {
-      final Table table = hTableRef.get();
-      if (table instanceof HTable) {
-        ((HTable) table).clearBuffer();
-      }
-    }
+    for (AtomicReference<Table> tableRef : tables.values()) {
+      final Table table = tableRef.get();
 
-    for (HTableFile hTableFile : tableFiles.values()) {
-      try {
-        Files.delete(hTableFile.getBloomFilterPath());
-        Files.delete(hTableFile.getHtablePath());
-      } catch (IOException e) {
-        throw new IllegalStateException("Error during deletion of htable", e);
+      if (table instanceof HTable) {
+        final HTable hTable = (HTable) table;
+        hTable.clearBuffer();
+
+        try {
+          Files.delete(hTable.getBloomFilterPath());
+          Files.delete(hTable.getHtablePath());
+        } catch (IOException e) {
+          throw new IllegalStateException("Error during deletion of htable", e);
+        }
       }
     }
 

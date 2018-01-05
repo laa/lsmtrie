@@ -1,9 +1,6 @@
 package com.orientechnologies.lsmtrie;
 
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
-
 import java.io.IOException;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -84,18 +81,17 @@ public class OLSMTrie {
     final MemTable memTable = current.get();
     memTable.waitTillZeroModifiers();
 
-    final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name);
-    try {
-      convertToHTableAction.invoke();
-    } catch (IOException e) {
-      throw new IllegalStateException("Can not convert memtable to htable", e);
+    if (!memTable.isEmpty()) {
+      final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name);
+      try {
+        convertToHTableAction.invoke();
+      } catch (IOException e) {
+        throw new IllegalStateException("Can not convert memtable to htable", e);
+      }
+
+      final HTable hTable = convertToHTableAction.gethTable();
+      node0.updateTable(hTable);
     }
-
-    final Path htablePath = convertToHTableAction.getHtablePath();
-    final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
-    final HTable hTable = convertToHTableAction.gethTable();
-
-    node0.updateTable(hTable, new HTableFile(bloomFilterPath, htablePath));
 
     try {
       registry.save(node0);
@@ -175,11 +171,9 @@ public class OLSMTrie {
         memTable.waitTillZeroModifiers();
 
         final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name).invoke();
-        final Path htablePath = convertToHTableAction.getHtablePath();
-        final Path bloomFilterPath = convertToHTableAction.getBloomFilterPath();
         final HTable hTable = convertToHTableAction.gethTable();
 
-        node0.updateTable(hTable, new HTableFile(bloomFilterPath, htablePath));
+        node0.updateTable(hTable);
 
         allowedQueueMemtables.release();
       } catch (Exception | Error e) {

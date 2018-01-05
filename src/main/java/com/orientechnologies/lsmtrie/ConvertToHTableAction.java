@@ -7,12 +7,9 @@ import java.io.OutputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
 class ConvertToHTableAction {
-  private       Path   bloomFilterPath;
-  private       Path   htablePath;
   private       HTable hTable;
   private final Path   root;
 
@@ -25,17 +22,11 @@ class ConvertToHTableAction {
     this.name = name;
   }
 
-  public Path getHtablePath() {
-    return htablePath;
-  }
 
   public HTable gethTable() {
     return hTable;
   }
 
-  public Path getBloomFilterPath() {
-    return bloomFilterPath;
-  }
 
   public ConvertToHTableAction invoke() throws IOException {
     final SerializedHTable serializedHTable = memTable.toHTable();
@@ -44,7 +35,7 @@ class ConvertToHTableAction {
     final String htableName = name + "_" + tableId + ".htb";
     final String bloomFiltersName = name + "_" + tableId + ".bl";
 
-    bloomFilterPath = root.resolve(bloomFiltersName);
+    final Path bloomFilterPath = root.resolve(bloomFiltersName);
 
     try (FileChannel bloomChannel = FileChannel
         .open(bloomFilterPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
@@ -56,7 +47,7 @@ class ConvertToHTableAction {
       bloomChannel.force(true);
     }
 
-    htablePath = root.resolve(htableName);
+    Path htablePath = root.resolve(htableName);
     try (FileChannel htableChannel = FileChannel
         .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
       htableChannel.write(serializedHTable.getHtableBuffer());
@@ -64,7 +55,8 @@ class ConvertToHTableAction {
       htableChannel.force(true);
 
       hTable = new HTable(serializedHTable.getBloomFilters(),
-          htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId);
+          htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId, bloomFilterPath,
+          htablePath);
     }
 
     return this;

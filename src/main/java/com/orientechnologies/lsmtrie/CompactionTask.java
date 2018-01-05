@@ -71,6 +71,8 @@ public class CompactionTask extends RecursiveAction {
 
   private void moveHTablesDown(Node node) throws IOException {
     System.out.println("Compaction is started");
+    final long start = System.nanoTime();
+
     final MemTable[] memTables = new MemTable[8];
     for (int i = 0; i < memTables.length; i++) {
       memTables[i] = new MemTable(tableIdGen.getAndIncrement());
@@ -116,7 +118,7 @@ public class CompactionTask extends RecursiveAction {
             convert.invoke();
 
             final HTable newTable = convert.gethTable();
-            child.addHTable(newTable, new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
+            child.addHTable(newTable);
 
             memTables[i] = new MemTable(tableIdGen.getAndIncrement());
           }
@@ -146,7 +148,7 @@ public class CompactionTask extends RecursiveAction {
         convert.invoke();
 
         final HTable newTable = convert.gethTable();
-        child.addHTable(newTable, new HTableFile(convert.getBloomFilterPath(), convert.getHtablePath()));
+        child.addHTable(newTable);
       }
     }
 
@@ -160,6 +162,7 @@ public class CompactionTask extends RecursiveAction {
         compactionSet.add(child);
       }
     }
-    System.out.println("Compaction is finished");
+    final long end = System.nanoTime();
+    System.out.printf("Compaction is finished in %d ms. , %d tables were compacted \n", (end - start) / 1000_000, hTables.size());
   }
 }

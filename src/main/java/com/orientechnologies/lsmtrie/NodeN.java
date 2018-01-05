@@ -5,15 +5,13 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class NodeN implements Node {
-  private final ConcurrentSkipListMap<Long, HTable> tables     = new ConcurrentSkipListMap<>();
-  private final ConcurrentHashMap<Long, HTableFile> tableFiles = new ConcurrentHashMap<>();
-  private final AtomicReference<NodeN[]>            children   = new AtomicReference<>();
+  private final ConcurrentSkipListMap<Long, HTable> tables   = new ConcurrentSkipListMap<>();
+  private final AtomicReference<NodeN[]>            children = new AtomicReference<>();
 
   private final int        level;
   private final long       id;
@@ -25,9 +23,8 @@ public class NodeN implements Node {
     this.nodeIdGen = nodeIdGen;
   }
 
-  public void addHTable(HTable hTable, HTableFile hTableFile) {
+  public void addHTable(HTable hTable) {
     tables.put(hTable.getId(), hTable);
-    tableFiles.put(hTable.getId(), hTableFile);
   }
 
   public byte[] get(byte[] key, byte[] sha1) {
@@ -50,6 +47,13 @@ public class NodeN implements Node {
   public void close() {
     for (HTable hTable : tables.values()) {
       hTable.clearBuffer();
+    }
+
+    final NodeN[] children = this.children.get();
+    if (children != null) {
+      for (NodeN child : children) {
+        child.close();
+      }
     }
   }
 
@@ -81,6 +85,7 @@ public class NodeN implements Node {
       final HTable hTable = values.next();
       result.add(hTable);
     }
+
     return result;
   }
 
@@ -89,10 +94,9 @@ public class NodeN implements Node {
     HTable hTable = tables.remove(id);
     hTable.clearBuffer();
 
-    final HTableFile hTableFile = tableFiles.remove(id);
     try {
-      Files.delete(hTableFile.getHtablePath());
-      Files.delete(hTableFile.getBloomFilterPath());
+      Files.delete(hTable.getHtablePath());
+      Files.delete(hTable.getBloomFilterPath());
     } catch (IOException e) {
       throw new IllegalStateException("Error during deletion of htable");
     }
@@ -101,12 +105,10 @@ public class NodeN implements Node {
   public void delete() {
     for (HTable table : tables.values()) {
       table.clearBuffer();
-    }
 
-    for (HTableFile hTableFile : tableFiles.values()) {
       try {
-        Files.delete(hTableFile.getBloomFilterPath());
-        Files.delete(hTableFile.getHtablePath());
+        Files.delete(table.getBloomFilterPath());
+        Files.delete(table.getHtablePath());
       } catch (IOException e) {
         throw new IllegalStateException("Error during deletion of htable", e);
       }
@@ -126,23 +128,18 @@ public class NodeN implements Node {
 
   @Override
   public NodeMetadata getMetadata() {
-    final List<Long> tableIdsList = new ArrayList<>(tables.keySet());
+    final List<HTable> tableList = new ArrayList<>(tables.values());
 
-    final String[] bloomFiles = new String[tableIdsList.size()];
-    final String[] htableFiles = new String[tableIdsList.size()];
+    final String[] bloomFiles = new String[tableList.size()];
+    final String[] htableFiles = new String[tableList.size()];
+    final long[] tableIds = new long[tableList.size()];
 
     int counter = 0;
-    for (Long tableId : tableIdsList) {
-      final HTableFile file = tableFiles.get(tableId);
-
-      bloomFiles[counter] = file.getBloomFilterPath().toAbsolutePath().toString();
-      htableFiles[counter] = file.getHtablePath().toAbsolutePath().toString();
+    for (HTable table : tableList) {
+      bloomFiles[counter] = table.getBloomFilterPath().toAbsolutePath().toString();
+      htableFiles[counter] = table.getHtablePath().toAbsolutePath().toString();
+      tableIds[counter] = table.getId();
       counter++;
-    }
-
-    final long[] tableIds = new long[tableIdsList.size()];
-    for (int i = 0; i < tableIds.length; i++) {
-      tableIds[i] = tableIdsList.get(i);
     }
 
     return new NodeMetadata(id, level, bloomFiles, htableFiles, tableIds);
@@ -153,7 +150,7 @@ public class NodeN implements Node {
     final NodeN[] children = this.children.get();
     final NodeN[] newChildren = new NodeN[8];
 
-    if (child != null) {
+    if (children != null) {
       System.arraycopy(children, 0, newChildren, 0, children.length);
     }
 

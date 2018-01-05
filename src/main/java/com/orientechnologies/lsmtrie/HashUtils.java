@@ -27,7 +27,7 @@ class HashUtils {
       return ((0xFF & sha1[sha1.length - bytes - 1]) >>> (5 - bitsOffset)) & 0x7;
     } else {
       final int firstOffset = 8 - bitsOffset;
-      final int firstPart =  (0xFF & sha1[sha1.length - bytes - 1]) & (0x7 >>> (3 - firstOffset));
+      final int firstPart =  ((0xFF & sha1[sha1.length - bytes - 1]) & (0x7 >>> (3 - firstOffset))) << (3 - firstOffset);
       final int secondPart = (0xFF & sha1[sha1.length - bytes - 2]) >>> (8 - (3 - firstOffset));
       return firstPart | secondPart;
     }

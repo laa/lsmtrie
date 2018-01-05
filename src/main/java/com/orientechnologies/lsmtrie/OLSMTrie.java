@@ -58,7 +58,8 @@ public class OLSMTrie {
 
     node0.addMemTable(table);
 
-    final CompactionTask compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root);
+    final CompactionTask compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root,
+        registry);
     compactionPool.submit(compactionTask);
   }
 
@@ -174,6 +175,7 @@ public class OLSMTrie {
         final HTable hTable = convertToHTableAction.gethTable();
 
         node0.updateTable(hTable);
+        registry.save(node0);
 
         allowedQueueMemtables.release();
       } catch (Exception | Error e) {

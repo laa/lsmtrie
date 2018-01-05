@@ -271,7 +271,7 @@ public class Registry {
     }
 
     if (bufferTwo != null) {
-      bufferTwoVersion = bufferTwo.getInt(0);
+      bufferTwoVersion = bufferTwo.getLong(0);
     }
 
     CRC32 crc32 = new CRC32();

@@ -26,10 +26,13 @@ public class LSMTrieTest {
     buildDirectory = Paths.get(System.getProperty("buildDirectory", "target")).resolve("LSMTrieTest");
   }
 
+
+
   @Before
   public void beforeMethod() throws Exception {
     removeRecursively(buildDirectory);
   }
+
 
   @Test
   public void testAddNkeys() throws Exception {
@@ -42,8 +45,9 @@ public class LSMTrieTest {
     OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
     lsmTrie.load();
 
+    Map<ByteHolder, ByteHolder> data = new HashMap<>();
     System.out.println("Entries generation started");
-    Map<ByteHolder, ByteHolder> data = generateNEntries(n, random);
+    generateNEntries(data, n, random);
     System.out.println("Entries generation completed");
 
     long fillStart = System.nanoTime();
@@ -83,6 +87,136 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
+  @Test
+  public void testAddNNkeysOpenClose() throws Exception {
+    int n = 2 * 8 * 8 * 156_672;
+    final long seed = System.nanoTime();
+    System.out.println("testAddNkeys (" + n + " keys) seed: " + seed);
+
+    final Random random = new Random(seed);
+    for (int i = 0; i < 10; i++) {
+      OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+      lsmTrie.load();
+
+      Map<ByteHolder, ByteHolder> data = new HashMap<>();
+      System.out.println("Entries generation started");
+      generateNEntries(data, n, random);
+      System.out.println("Entries generation completed");
+
+      long fillStart = System.nanoTime();
+      for (Map.Entry<ByteHolder, ByteHolder> entry : data.entrySet()) {
+        lsmTrie.put(entry.getKey().bytes, entry.getValue().bytes);
+      }
+      long fillEnd = System.nanoTime();
+
+      System.out.printf("Load speed for %d, items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
+          n * 1000_000_000L / (fillEnd - fillStart));
+
+      Set<ByteHolder> nonExistingData = generateNNotExistingEntries(10000, data, random);
+
+      for (int k = 0; k < 5; k++) {
+        System.out.printf("%d check \n", k + 1);
+        long assertStart = System.nanoTime();
+        assertTable(data, nonExistingData, lsmTrie);
+        long assertEnd = System.nanoTime();
+        System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n,
+            n * 1000_000_000L / (assertEnd - assertStart));
+      }
+
+      System.out.println("Close trie");
+      lsmTrie.close();
+    }
+  }
+
+  @Test
+  public void testAddN2keys() throws Exception {
+    int n = 8 * 8 * 156_672;
+
+    final long seed = System.nanoTime();
+    System.out.println("testAddN2keys (" + n + " keys) seed: " + seed);
+
+    final Random random = new Random(seed);
+    OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    lsmTrie.load();
+
+    Map<ByteHolder, ByteHolder> data = new HashMap<>();
+    System.out.println("Entries generation started");
+    generateNEntries(data, n, random);
+    System.out.println("Entries generation completed");
+
+    long fillStart = System.nanoTime();
+    for (Map.Entry<ByteHolder, ByteHolder> entry : data.entrySet()) {
+      lsmTrie.put(entry.getKey().bytes, entry.getValue().bytes);
+    }
+    long fillEnd = System.nanoTime();
+
+    System.out.printf("Load speed for %d, items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
+        n * 1000_000_000L / (fillEnd - fillStart));
+
+    Set<ByteHolder> nonExistingData = generateNNotExistingEntries(10000, data, random);
+
+    for (int k = 0; k < 5; k++) {
+      System.out.printf("%d check \n", k + 1);
+      long assertStart = System.nanoTime();
+      assertTable(data, nonExistingData, lsmTrie);
+      long assertEnd = System.nanoTime();
+      System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n,
+          n * 1000_000_000L / (assertEnd - assertStart));
+    }
+
+    System.out.println("Close trie");
+    lsmTrie.close();
+
+    lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    System.out.println("Load trie");
+    lsmTrie.load();
+
+    System.out.println("Assertion check");
+    long assertStart = System.nanoTime();
+    assertTable(data, nonExistingData, lsmTrie);
+    long assertEnd = System.nanoTime();
+    System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / n,
+        n * 1000_000_000L / (assertEnd - assertStart));
+
+    System.out.println("Entries generation started");
+    generateNEntries(data, n, random);
+    System.out.println("Entries generation completed");
+
+    fillStart = System.nanoTime();
+    for (Map.Entry<ByteHolder, ByteHolder> entry : data.entrySet()) {
+      lsmTrie.put(entry.getKey().bytes, entry.getValue().bytes);
+    }
+    fillEnd = System.nanoTime();
+
+    System.out.printf("Load speed for %d, items is :%d ns/item, %d op/s \n", n, (fillEnd - fillStart) / n,
+        n * 1000_000_000L / (fillEnd - fillStart));
+
+    for (int k = 0; k < 5; k++) {
+      System.out.printf("%d check \n", k + 1);
+      assertStart = System.nanoTime();
+      assertTable(data, nonExistingData, lsmTrie);
+      assertEnd = System.nanoTime();
+      System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / (2 * n),
+          2 * n * 1000_000_000L / (assertEnd - assertStart));
+    }
+
+    System.out.println("Close trie");
+    lsmTrie.close();
+
+    lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    System.out.println("Load trie");
+    lsmTrie.load();
+
+    System.out.println("Assertion check");
+    assertStart = System.nanoTime();
+    assertTable(data, nonExistingData, lsmTrie);
+    assertEnd = System.nanoTime();
+    System.out.printf("Assertion speed is %d ns/item, %d op/s \n", (assertEnd - assertStart) / (2 * n),
+        2 * n * 1000_000_000L / (assertEnd - assertStart));
+
+    lsmTrie.delete();
+  }
+
   private static byte[] generateKey(Random random) {
     final int keySize = random.nextInt(17) + 8;
     final byte[] key = new byte[keySize];
@@ -90,9 +224,7 @@ public class LSMTrieTest {
     return key;
   }
 
-  private Map<ByteHolder, ByteHolder> generateNEntries(int n, Random random) {
-    final Map<ByteHolder, ByteHolder> entries = new HashMap<>();
-
+  private Map<ByteHolder, ByteHolder> generateNEntries(Map<ByteHolder, ByteHolder> entries, int n, Random random) {
     while (entries.size() < n) {
       final byte[] key = generateKey(random);
 

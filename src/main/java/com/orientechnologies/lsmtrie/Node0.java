@@ -1,8 +1,11 @@
 package com.orientechnologies.lsmtrie;
 
+import com.google.common.collect.Comparators;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -15,7 +18,7 @@ public class Node0 implements Node {
   private final AtomicLong nodeIdGen;
   private final Semaphore  compactionCounter;
 
-  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables   = new ConcurrentSkipListMap<>();
+  private final ConcurrentSkipListMap<Long, AtomicReference<Table>> tables   = new ConcurrentSkipListMap<>(Comparator.reverseOrder());
   private final AtomicReference<NodeN[]>                            children = new AtomicReference<>();
 
   Node0(long id, AtomicLong nodeIdGen, Semaphore compactionCounter) {
@@ -109,7 +112,7 @@ public class Node0 implements Node {
 
   public List<HTable> getNOldestHTables(int limit) {
     final List<HTable> result = new ArrayList<>();
-    final Iterator<AtomicReference<Table>> values = tables.values().iterator();
+    final Iterator<AtomicReference<Table>> values = tables.descendingMap().values().iterator();
 
     while (values.hasNext() && result.size() < limit) {
       final AtomicReference<Table> tableRef = values.next();

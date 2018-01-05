@@ -3,6 +3,7 @@ package com.orientechnologies.lsmtrie;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -10,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class NodeN implements Node {
-  private final ConcurrentSkipListMap<Long, HTable> tables   = new ConcurrentSkipListMap<>();
+  private final ConcurrentSkipListMap<Long, HTable> tables   = new ConcurrentSkipListMap<>(Comparator.reverseOrder());
   private final AtomicReference<NodeN[]>            children = new AtomicReference<>();
 
   private final int        level;
@@ -79,7 +80,7 @@ public class NodeN implements Node {
   @Override
   public List<HTable> getNOldestHTables(int limit) {
     final List<HTable> result = new ArrayList<>();
-    final Iterator<HTable> values = tables.values().iterator();
+    final Iterator<HTable> values = tables.descendingMap().values().iterator();
 
     while (values.hasNext() && result.size() < limit) {
       final HTable hTable = values.next();

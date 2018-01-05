@@ -24,14 +24,17 @@ public class CompactionTask extends RecursiveAction {
   private final AtomicLong           tableIdGen;
   private final Path                 root;
   private final Set<NodeN> compactionSet = new HashSet<>();
+  private final Registry registry;
 
-  CompactionTask(String name, Semaphore compactionCounter, AtomicBoolean stop, Node0 node0, AtomicLong tableIdGen, Path root) {
+  CompactionTask(String name, Semaphore compactionCounter, AtomicBoolean stop, Node0 node0, AtomicLong tableIdGen, Path root,
+      Registry registry) {
     this.name = name;
     this.compactionCounter = compactionCounter;
     this.stop = stop;
     this.node0 = node0;
     this.tableIdGen = tableIdGen;
     this.root = root;
+    this.registry = registry;
     this.compactionQueue = new PriorityQueue<>(Comparator.comparingInt(NodeN::getLevel));
   }
 
@@ -151,6 +154,8 @@ public class CompactionTask extends RecursiveAction {
         child.addHTable(newTable);
       }
     }
+
+    registry.save(node0);
 
     for (HTable hTableToRemove : hTables) {
       node.removeTable(hTableToRemove.getId());

@@ -8,9 +8,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -26,13 +29,10 @@ public class LSMTrieTest {
     buildDirectory = Paths.get(System.getProperty("buildDirectory", "target")).resolve("LSMTrieTest");
   }
 
-
-
   @Before
   public void beforeMethod() throws Exception {
     removeRecursively(buildDirectory);
   }
-
 
   @Test
   public void testAddNkeys() throws Exception {
@@ -126,6 +126,52 @@ public class LSMTrieTest {
       System.out.println("Close trie");
       lsmTrie.close();
     }
+
+    OLSMTrie lsmTrie = new OLSMTrie("testAddNkeys", buildDirectory);
+    lsmTrie.load();
+    lsmTrie.delete();
+  }
+
+  @Test
+  public void testAddDuplicates() throws Exception {
+    int n = 1_000_000;
+
+    final long seed = System.nanoTime();
+    System.out.println("testAddDuplicates seed: " + seed);
+
+    final Random random = new Random(seed);
+    OLSMTrie lsmTrie = new OLSMTrie("testAddDuplicates", buildDirectory);
+    lsmTrie.load();
+
+    Map<ByteHolder, ByteHolder> data = new HashMap<>();
+    System.out.println("Entries generation started");
+    generateNEntries(data, n, random);
+    System.out.println("Entries generation completed");
+    List<Map.Entry<ByteHolder, ByteHolder>> entries = new ArrayList<>(data.entrySet());
+    Map<ByteHolder, ByteHolder> addedData = new HashMap<>();
+
+    for (int k = 0; k < 50; k++) {
+      System.out.printf("Add %d millions\n", k);
+      for (int i = 0; i < 1_000_000; i++) {
+        final int index = random.nextInt(entries.size());
+        final Map.Entry<ByteHolder, ByteHolder> entry = entries.get(index);
+        lsmTrie.put(entry.getKey().bytes, entry.getValue().bytes);
+        addedData.put(entry.getKey(), entry.getValue());
+      }
+
+      System.out.printf("%d assertion \n", k);
+      assertTable(addedData, Collections.emptySet(), lsmTrie);
+    }
+
+    System.out.println("Closing LSM trie");
+    lsmTrie.close();
+
+    System.out.println("Loading LSM trie");
+    lsmTrie.load();
+
+    System.out.println("Asserting LSM trie");
+    assertTable(addedData, Collections.emptySet(), lsmTrie);
+    lsmTrie.delete();
   }
 
   @Test

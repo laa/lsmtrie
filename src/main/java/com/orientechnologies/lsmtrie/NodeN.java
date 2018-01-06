@@ -7,12 +7,14 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class NodeN implements Node {
-  private final ConcurrentSkipListMap<Long, HTable> tables   = new ConcurrentSkipListMap<>(Comparator.reverseOrder());
-  private final AtomicReference<NodeN[]>            children = new AtomicReference<>();
+  private final AtomicInteger                       tablesCounter = new AtomicInteger();
+  private final ConcurrentSkipListMap<Long, HTable> tables        = new ConcurrentSkipListMap<>(Comparator.reverseOrder());
+  private final AtomicReference<NodeN[]>            children      = new AtomicReference<>();
 
   private final int        level;
   private final long       id;
@@ -26,6 +28,7 @@ public class NodeN implements Node {
 
   public void addHTable(HTable hTable) {
     tables.put(hTable.getId(), hTable);
+    tablesCounter.getAndIncrement();
   }
 
   public byte[] get(byte[] key, byte[] sha1) {
@@ -56,6 +59,10 @@ public class NodeN implements Node {
         child.close();
       }
     }
+  }
+
+  public int hTablesCount() {
+    return tablesCounter.get();
   }
 
   @Override
@@ -101,6 +108,8 @@ public class NodeN implements Node {
     } catch (IOException e) {
       throw new IllegalStateException("Error during deletion of htable");
     }
+
+    tablesCounter.decrementAndGet();
   }
 
   public void delete() {
@@ -121,6 +130,8 @@ public class NodeN implements Node {
         child.delete();
       }
     }
+
+    tablesCounter.set(0);
   }
 
   public int getLevel() {
@@ -168,10 +179,6 @@ public class NodeN implements Node {
   @Override
   public boolean hasChildren() {
     return children.get() != null;
-  }
-
-  public boolean isHtableLimitReached() {
-    return tables.size() >= 8;
   }
 }
 

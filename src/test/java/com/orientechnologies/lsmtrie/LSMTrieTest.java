@@ -1,5 +1,7 @@
 package com.orientechnologies.lsmtrie;
 
+import com.google.common.util.concurrent.Striped;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -17,6 +19,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -263,6 +276,153 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
+  @Test
+  public void mtTestOnlyFill() throws Exception {
+    for (int k = 0; k < 1; k++) {
+      int n = 2 * 8 * 156_672;
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyFill", buildDirectory);
+      lsmTrie.load();
+
+      final ConcurrentHashMap<ByteHolder, ByteHolder> data = new ConcurrentHashMap<>();
+      final Striped<Lock> striped = Striped.lazyWeakLock(1024);
+
+      System.out.println("Starting writers");
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new Writer(n, data, striped, lsmTrie)));
+      }
+
+      System.out.println("Waiting till writers completion");
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      System.out.printf("Writers are done %d items were added, assert table\n", data.size());
+      for (int i = 0; i < 2; i++) {
+        System.out.printf("%d assert \n", i);
+        assertTable(data, Collections.emptySet(), lsmTrie);
+      }
+
+      System.out.println("Close table");
+      lsmTrie.close();
+
+      System.out.println("Load table");
+      lsmTrie = new OLSMTrie("mtTestOnlyFill", buildDirectory);
+      lsmTrie.load();
+
+      System.out.println("Assert table");
+      assertTable(data, Collections.emptySet(), lsmTrie);
+      lsmTrie.delete();
+    }
+  }
+
+  @Test
+  public void mtTestOnlyHafFillHalfRead() throws Exception {
+    for (int k = 0; k < 10; k++) {
+      int n = 4 * 8 * 156_672;
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final List<Future<Void>> writers = new ArrayList<>();
+      final List<Future<Void>> readers = new ArrayList<>();
+
+      OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyHafFillHalfRead", buildDirectory);
+      lsmTrie.load();
+
+      final ConcurrentSkipListMap<ByteHolder, ByteHolder> data = new ConcurrentSkipListMap<>();
+      final Striped<Lock> striped = Striped.lazyWeakLock(1024);
+
+      System.out.println("Starting writers");
+      for (int i = 0; i < 4; i++) {
+        writers.add(executorService.submit(new Writer(n, data, striped, lsmTrie)));
+      }
+
+      final AtomicBoolean stop = new AtomicBoolean();
+      System.out.println("Starting readers");
+      for (int i = 0; i < 4; i++) {
+        readers.add(executorService.submit(new Reader(data, striped, lsmTrie, stop)));
+      }
+
+      System.out.println("Waiting till writers completion");
+      for (Future<Void> future : writers) {
+        future.get();
+      }
+
+      stop.set(true);
+
+      System.out.println("Waiting till readers completion");
+      for (Future<Void> future : readers) {
+        future.get();
+      }
+
+      System.out.printf("%d items were added, assert table\n", data.size());
+      for (int i = 0; i < 2; i++) {
+        System.out.printf("%d assert \n", i);
+        assertTable(data, Collections.emptySet(), lsmTrie);
+      }
+
+      System.out.println("Close table");
+      lsmTrie.close();
+
+      lsmTrie = new OLSMTrie("mtTestOnlyHafFillHalfRead", buildDirectory);
+      System.out.println("Load table");
+      lsmTrie.load();
+
+      System.out.println("Assert table");
+      assertTable(data, Collections.emptySet(), lsmTrie);
+      lsmTrie.delete();
+    }
+  }
+
+  @Test
+  public void mtTestOnlyFillAndUpdate() throws Exception {
+    OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyFillAndUpdate", buildDirectory);
+    lsmTrie.load();
+
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+    final List<Future<Void>> futures = new ArrayList<>();
+
+    final ConcurrentSkipListMap<ByteHolder, ByteHolder> data = new ConcurrentSkipListMap<>();
+    final Striped<Lock> striped = Striped.lazyWeakLock(1024);
+
+    final AtomicBoolean stop = new AtomicBoolean();
+
+    final AtomicInteger sizeCounter = new AtomicInteger();
+    System.out.println("Start data handling threads");
+    for (int i = 0; i < 8; i++) {
+      futures.add(executorService.submit(new Modifier(500_000, 20_000_000, sizeCounter, data, striped, lsmTrie, stop)));
+    }
+
+    int sec = 10 * 60 * 60;
+
+    System.out.printf("Wait during %d second\n", sec);
+    Thread.sleep(sec * 1000);
+
+    stop.set(true);
+
+    System.out.println("Wait for data handling threads to stop");
+    for (Future<Void> future : futures) {
+      future.get();
+    }
+
+    System.out.printf("%d items were added, assert table\n", data.size());
+    for (int i = 0; i < 5; i++) {
+      System.out.printf("%d assert \n", i);
+      assertTable(data, Collections.emptySet(), lsmTrie);
+    }
+
+    System.out.println("Close table");
+    lsmTrie.close();
+
+    System.out.println("Load table");
+    lsmTrie = new OLSMTrie("mtTestOnlyFillAndUpdate", buildDirectory);
+    lsmTrie.load();
+
+    System.out.println("Assert table");
+    assertTable(data, Collections.emptySet(), lsmTrie);
+    lsmTrie.delete();
+  }
+
   private static byte[] generateKey(Random random) {
     final int keySize = random.nextInt(17) + 8;
     final byte[] key = new byte[keySize];
@@ -303,7 +463,7 @@ public class LSMTrieTest {
     return value;
   }
 
-  private class ByteHolder {
+  private static class ByteHolder implements Comparable<ByteHolder> {
     private final byte[] bytes;
 
     private ByteHolder(byte[] bytes) {
@@ -323,6 +483,26 @@ public class LSMTrieTest {
     @Override
     public int hashCode() {
       return Arrays.hashCode(bytes);
+    }
+
+    @Override
+    public int compareTo(ByteHolder other) {
+
+      if (other.bytes.length == bytes.length) {
+        for (int i = 0; i < bytes.length; i++) {
+          final int cmp = Byte.compare(bytes[i], other.bytes[i]);
+
+          if (cmp != 0) {
+            return cmp;
+          }
+        }
+      } else if (bytes.length > other.bytes.length) {
+        return 1;
+      } else if (bytes.length < other.bytes.length) {
+        return -1;
+      }
+
+      return 0;
     }
   }
 
@@ -356,5 +536,277 @@ public class LSMTrieTest {
       });
     }
 
+  }
+
+  private final static class Writer implements Callable<Void> {
+    private final int                                   countOfItemsToAdd;
+    private final ConcurrentMap<ByteHolder, ByteHolder> data;
+    private final Striped<Lock>                         striped;
+    private final OLSMTrie                              lsmTrie;
+    private final ThreadLocalRandom random = ThreadLocalRandom.current();
+
+    Writer(int countOfItemsToAdd, ConcurrentMap<ByteHolder, ByteHolder> data, Striped<Lock> striped, OLSMTrie lsmTrie) {
+      this.countOfItemsToAdd = countOfItemsToAdd;
+      this.data = data;
+      this.striped = striped;
+      this.lsmTrie = lsmTrie;
+    }
+
+    @Override
+    public Void call() throws Exception {
+      try {
+        for (int i = 0; i < countOfItemsToAdd; i++) {
+          final byte[] key = generateKey(random);
+          final byte[] value = generateValue(random);
+
+          final ByteHolder holderKey = new ByteHolder(key);
+          final Lock lock = striped.get(holderKey);
+          lock.lock();
+          try {
+            data.put(holderKey, new ByteHolder(value));
+            lsmTrie.put(key, value);
+          } finally {
+            lock.unlock();
+          }
+
+          if (i > 0 & i % 100_000 == 0) {
+            System.out.printf("%d writer thread, %d items processed\n", Thread.currentThread().getId(), i);
+          }
+        }
+      } catch (Exception | Error e) {
+        e.printStackTrace();
+        throw e;
+      }
+      return null;
+    }
+  }
+
+  private static final class Reader implements Callable<Void> {
+    private final ConcurrentSkipListMap<ByteHolder, ByteHolder> data;
+    private final Striped<Lock>                                 striped;
+    private final OLSMTrie                                      lsmTrie;
+    private final ThreadLocalRandom random = ThreadLocalRandom.current();
+    private final AtomicBoolean stop;
+
+    Reader(ConcurrentSkipListMap<ByteHolder, ByteHolder> data, Striped<Lock> striped, OLSMTrie lsmTrie, AtomicBoolean stop) {
+      this.data = data;
+      this.striped = striped;
+      this.lsmTrie = lsmTrie;
+      this.stop = stop;
+    }
+
+    @Override
+    public Void call() throws Exception {
+      int counter = 0;
+      try {
+        while (!stop.get()) {
+          ByteHolder existingKey = null;
+
+          while (!stop.get()) {
+            final ByteHolder key = new ByteHolder(generateKey(random));
+
+            existingKey = data.ceilingKey(key);
+            if (existingKey == null) {
+              existingKey = data.floorKey(key);
+            }
+            if (existingKey != null) {
+              break;
+            }
+          }
+
+          if (existingKey == null) {
+            continue;
+          }
+
+          final Lock lock = striped.get(existingKey);
+          lock.lock();
+          try {
+            final ByteHolder value = data.get(existingKey);
+            Assert.assertNotNull(value);
+            final byte[] lsmValue = lsmTrie.get(existingKey.bytes);
+            Assert.assertNotNull(lsmValue);
+            Assert.assertEquals(value, new ByteHolder(lsmValue));
+            counter++;
+
+            if (counter > 0 & counter % 100_000 == 0) {
+              System.out.printf("%d reader thread, %d items processed\n", Thread.currentThread().getId(), counter);
+            }
+
+          } finally {
+            lock.unlock();
+          }
+        }
+      } catch (Exception | Error e) {
+        e.printStackTrace();
+        throw e;
+      }
+
+      return null;
+    }
+  }
+
+  private static final class Modifier implements Callable<Void> {
+    private final int                                           minSize;
+    private final int                                           sizeLimit;
+    private final ConcurrentSkipListMap<ByteHolder, ByteHolder> data;
+    private final Striped<Lock>                                 striped;
+    private final OLSMTrie                                      lsmTrie;
+    private final ThreadLocalRandom random = ThreadLocalRandom.current();
+    private final AtomicBoolean stop;
+    private final AtomicInteger sizeCounter;
+
+    private Modifier(int minSize, int sizeLimit, AtomicInteger sizeCounter, ConcurrentSkipListMap<ByteHolder, ByteHolder> data,
+        Striped<Lock> striped, OLSMTrie lsmTrie, AtomicBoolean stop) {
+      this.minSize = minSize;
+      this.sizeLimit = sizeLimit;
+      this.data = data;
+      this.striped = striped;
+      this.lsmTrie = lsmTrie;
+      this.stop = stop;
+      this.sizeCounter = sizeCounter;
+    }
+
+    @Override
+    public Void call() throws Exception {
+      try {
+        boolean sizeLimitReached = false;
+        long add = 0;
+        long read = 0;
+        long update = 0;
+
+        while (!stop.get()) {
+
+          if ((add + update + read) > 0 && (add + update + read) % 500_000 == 0) {
+            System.out.printf("Thread %d, %,d operations were performed (%,d reads, %,d updates, %,d additions), db size is %,d\n",
+                Thread.currentThread().getId(), (add + +update + read), read, update, add, sizeCounter.get());
+          }
+
+          if (!sizeLimitReached) {
+            final int size = sizeCounter.get();
+
+            sizeLimitReached = size >= sizeLimit;
+
+            if (sizeLimitReached) {
+              System.out.printf("Thread %d: size limit %d is reached\n", Thread.currentThread().getId(), size);
+            }
+            if (size < minSize) {
+              add();
+              add++;
+              continue;
+            }
+          }
+
+          final double operation = random.nextDouble();
+
+          if (!sizeLimitReached) {
+            if (operation < 0.3) {
+              read();
+              read++;
+            } else if (operation < 0.6) {
+              add();
+              add++;
+            } else {
+              update();
+              update++;
+            }
+          } else {
+            if (operation < 0.5) {
+              update();
+              update++;
+            } else {
+              read();
+              read++;
+            }
+          }
+
+        }
+      } catch (Exception | Error e) {
+        e.printStackTrace();
+        throw e;
+      }
+      return null;
+    }
+
+    private void read() {
+      ByteHolder existingKey = null;
+
+      while (!stop.get()) {
+        final ByteHolder key = new ByteHolder(generateKey(random));
+
+        existingKey = data.ceilingKey(key);
+        if (existingKey == null) {
+          existingKey = data.floorKey(key);
+        }
+        if (existingKey != null) {
+          break;
+        }
+      }
+
+      if (existingKey == null) {
+        return;
+      }
+
+      final Lock lock = striped.get(existingKey);
+      lock.lock();
+      try {
+        final ByteHolder value = data.get(existingKey);
+        Assert.assertNotNull(value);
+        final byte[] lsmValue = lsmTrie.get(existingKey.bytes);
+        Assert.assertNotNull(lsmValue);
+        Assert.assertEquals(value, new ByteHolder(lsmValue));
+      } finally {
+        lock.unlock();
+      }
+    }
+
+    private void add() {
+      final byte[] key = generateKey(random);
+      final byte[] value = generateValue(random);
+
+      final ByteHolder holderKey = new ByteHolder(key);
+      final Lock lock = striped.get(holderKey);
+      lock.lock();
+      try {
+        ByteHolder oldValue = data.put(holderKey, new ByteHolder(value));
+        lsmTrie.put(key, value);
+        if (oldValue == null) {
+          sizeCounter.getAndIncrement();
+        }
+      } finally {
+        lock.unlock();
+      }
+    }
+
+    private void update() {
+      ByteHolder existingKey = null;
+
+      while (!stop.get()) {
+        final ByteHolder key = new ByteHolder(generateKey(random));
+
+        existingKey = data.ceilingKey(key);
+        if (existingKey == null) {
+          existingKey = data.floorKey(key);
+        }
+        if (existingKey != null) {
+          break;
+        }
+      }
+
+      if (existingKey == null) {
+        return;
+      }
+
+      final Lock lock = striped.get(existingKey);
+      lock.lock();
+      try {
+        final byte[] value = generateValue(random);
+        final ByteHolder valueHolder = new ByteHolder(value);
+
+        data.put(existingKey, valueHolder);
+        lsmTrie.put(existingKey.bytes, value);
+      } finally {
+        lock.unlock();
+      }
+    }
   }
 }

@@ -45,6 +45,7 @@ public class Node0 implements Node {
     final Table table = tableRef.get();
     if (table instanceof HTable) {
       final HTable hTable = (HTable) table;
+      hTable.waitTillReaders();
       hTable.clearBuffer();
 
       try {

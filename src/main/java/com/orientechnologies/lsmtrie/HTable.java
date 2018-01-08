@@ -9,6 +9,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 
 public class HTable implements Table {
   private final BloomFilter<byte[]>[] bloomFilters;
@@ -18,6 +19,8 @@ public class HTable implements Table {
 
   private final Path bloomFilterPath;
   private final Path htablePath;
+
+  private final LongAdder readersCount = new LongAdder();
 
   HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id, Path bloomFilterPath, Path htablePath) {
     this.bloomFilters = bloomFilters;
@@ -29,47 +32,68 @@ public class HTable implements Table {
 
   @Override
   public byte[] get(byte[] key, byte[] sha1) {
-    final int bucketIndex = HashUtils.bucketIndex(sha1);
-    final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
+    readersCount.increment();
+    try {
+      final int bucketIndex = HashUtils.bucketIndex(sha1);
+      final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
 
-    if (bloomFilter.mightContain(key)) {
-      return readValueFormBucket(key, sha1, bucketIndex);
+      if (bloomFilter.mightContain(key)) {
+        return readValueFormBucket(key, sha1, bucketIndex);
+      }
+
+      return null;
+    } finally {
+      readersCount.decrement();
     }
-
-    return null;
   }
 
   public int bucketLength(int index) {
-    final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
-    htable.position(index * BUCKET_SIZE);
+    readersCount.increment();
+    try {
+      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+      htable.position(index * BUCKET_SIZE);
 
-    return htable.getShort();
+      return htable.getShort();
+    } finally {
+      readersCount.decrement();
+    }
   }
 
   public byte[][] getBucketItem(int bucketIndex, int entryIndex) {
-    final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
-    htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
+    readersCount.increment();
+    try {
+      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+      htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
 
-    final byte[] sha1 = new byte[SHA_1_SIZE];
-    htable.get(sha1);
+      final byte[] sha1 = new byte[SHA_1_SIZE];
+      htable.get(sha1);
 
-    final int entryOffset = htable.getInt();
+      final int entryOffset = htable.getInt();
 
-    htable.position(entryOffset);
-    final int keyLength = htable.getShort();
-    final byte[] key = new byte[keyLength];
-    htable.get(key);
+      htable.position(entryOffset);
+      final int keyLength = htable.getShort();
+      final byte[] key = new byte[keyLength];
+      htable.get(key);
 
-    final int valueLength = htable.getShort();
-    final byte[] value = new byte[valueLength];
-    htable.get(value);
+      final int valueLength = htable.getShort();
+      final byte[] value = new byte[valueLength];
+      htable.get(value);
 
-    final byte[][] result = new byte[3][];
-    result[0] = sha1;
-    result[1] = key;
-    result[2] = value;
+      final byte[][] result = new byte[3][];
+      result[0] = sha1;
+      result[1] = key;
+      result[2] = value;
 
-    return result;
+      return result;
+    } finally {
+      readersCount.decrement();
+    }
+  }
+
+  public void waitTillReaders() {
+    while (readersCount.sum() > 0) {
+      Thread.yield();
+    }
   }
 
   @Override

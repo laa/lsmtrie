@@ -40,7 +40,7 @@ public class OLSMTrie {
     }
   });
 
-  OLSMTrie(String name, Path root) {
+  public OLSMTrie(String name, Path root) {
     this.name = name;
     this.root = root;
     this.registry = new Registry(root, name);
@@ -64,21 +64,7 @@ public class OLSMTrie {
   }
 
   public void close() {
-    stopCompaction.set(true);
-    serviceThreads.shutdown();
-
-    try {
-      if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
-        throw new IllegalStateException("Can not terminate service threads");
-      }
-    } catch (InterruptedException e) {
-      return;
-    }
-
-    if (!compactionPool.awaitQuiescence(1, TimeUnit.HOURS)) {
-      throw new IllegalStateException("Can not terminate compaction threads");
-    }
-
+    System.out.println("Conver memtable to htable");
     final MemTable memTable = current.get();
     memTable.waitTillZeroModifiers();
 
@@ -94,6 +80,28 @@ public class OLSMTrie {
       node0.updateTable(hTable);
     }
 
+    System.out.println("Wait till compaction is completed");
+
+    while (compactionCounter.availablePermits() >= 8) {
+      Thread.yield();
+    }
+
+    stopCompaction.set(true);
+    serviceThreads.shutdown();
+
+    try {
+      if (!serviceThreads.awaitTermination(1, TimeUnit.HOURS)) {
+        throw new IllegalStateException("Can not terminate service threads");
+      }
+    } catch (InterruptedException e) {
+      return;
+    }
+
+    if (!compactionPool.awaitQuiescence(1, TimeUnit.HOURS)) {
+      throw new IllegalStateException("Can not terminate compaction threads");
+    }
+
+    System.out.println("Compaction is completed");
     try {
       registry.save(node0);
       node0.close();

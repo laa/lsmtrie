@@ -15,11 +15,13 @@ class ConvertToHTableAction {
 
   private final MemTable memTable;
   private final String   name;
+  private final int level;
 
-  ConvertToHTableAction(MemTable memTable, Path root, String name) {
+  ConvertToHTableAction(MemTable memTable, Path root, String name, int level) {
     this.memTable = memTable;
     this.root = root;
     this.name = name;
+    this.level = level;
   }
 
 
@@ -32,8 +34,8 @@ class ConvertToHTableAction {
     final SerializedHTable serializedHTable = memTable.toHTable();
     final long tableId = memTable.getId();
 
-    final String htableName = name + "_" + tableId + ".htb";
-    final String bloomFiltersName = name + "_" + tableId + ".bl";
+    final String htableName = name + "_" + tableId + "_L_" + level + ".htb";
+    final String bloomFiltersName = name + "_" + tableId + "_L_" + level + ".bl";
 
     final Path bloomFilterPath = root.resolve(bloomFiltersName);
 

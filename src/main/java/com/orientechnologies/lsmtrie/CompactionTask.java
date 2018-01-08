@@ -4,10 +4,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.Set;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.Semaphore;
@@ -23,8 +21,7 @@ public class CompactionTask extends RecursiveAction {
   private final Node0                node0;
   private final AtomicLong           tableIdGen;
   private final Path                 root;
-  private final Set<NodeN> compactionSet = new HashSet<>();
-  private final Registry registry;
+  private final Registry             registry;
 
   CompactionTask(String name, Semaphore compactionCounter, AtomicBoolean stop, Node0 node0, AtomicLong tableIdGen, Path root,
       Registry registry) {
@@ -35,12 +32,7 @@ public class CompactionTask extends RecursiveAction {
     this.tableIdGen = tableIdGen;
     this.root = root;
     this.registry = registry;
-    this.compactionQueue = new PriorityQueue<>((nodeOne, nodeTwo) -> {
-      final int normalizedTableCountOne = nodeOne.hTablesCount() / nodeOne.getLevel();
-      final int normalizedTableCountTwo = nodeTwo.hTablesCount() / nodeTwo.getLevel();
-
-      return -Integer.compare(normalizedTableCountOne, normalizedTableCountTwo);
-    });
+    this.compactionQueue = new PriorityQueue<>(Comparator.comparingInt(NodeN::getLevel));
   }
 
   @Override
@@ -49,36 +41,15 @@ public class CompactionTask extends RecursiveAction {
       while (!stop.get()) {
         try {
           //wait till 8 htables in node 0 before start node 0 compaction
-          final boolean zeroLevelLimitIsReached = compactionCounter.tryAcquire(8, 1, TimeUnit.SECONDS);
+          final boolean compactionLimitIsReached = compactionCounter.tryAcquire(8, 1, TimeUnit.SECONDS);
 
-          if (zeroLevelLimitIsReached) {
-            final int node0TableCount = compactionCounter.availablePermits() + 8;
-            final NodeN compactionCandidate = compactionQueue.peek();
+          if (compactionLimitIsReached) {
+            moveHTablesDown(node0);
 
-            if (compactionCandidate == null) {
-              moveHTablesDown(node0);
-            } else {
-              if (compactionCandidate.hTablesCount() / (compactionCandidate.getLevel() + 1) > node0TableCount) {
-                compactionCounter.release(8);
+            NodeN node;
 
-                compactionQueue.poll();
-                compactionSet.remove(compactionCandidate);
-
-                moveHTablesDown(compactionCandidate);
-              } else {
-                moveHTablesDown(node0);
-              }
-            }
-          } else {
-            final NodeN node = compactionQueue.poll();
-            if (node != null) {
-              compactionSet.remove(node);
+            while ((node = compactionQueue.poll()) != null) {
               moveHTablesDown(node);
-
-              if (node.hTablesCount() > 1) {
-                compactionQueue.add(node);
-                compactionSet.add(node);
-              }
             }
           }
         } catch (IOException e) {
@@ -95,6 +66,7 @@ public class CompactionTask extends RecursiveAction {
 
   private void moveHTablesDown(Node node) throws IOException {
     final long start = System.nanoTime();
+    int newTables = 0;
 
     final MemTable[] memTables = new MemTable[8];
     for (int i = 0; i < memTables.length; i++) {
@@ -104,7 +76,7 @@ public class CompactionTask extends RecursiveAction {
     final List<HTable> hTables = node.getNOldestHTables(1024);
     System.out.printf("Compaction is started for node from level %d which contains %d htables\n", node.getLevel(), hTables.size());
 
-    if (hTables.size() < 1) {
+    if (hTables.size() < 8) {
       System.out.println("Compaction is finished nothing to compact");
       return;
     }
@@ -139,10 +111,11 @@ public class CompactionTask extends RecursiveAction {
 
           final MemTable memTable = memTables[i];
           if (memTable.isFilled()) {
-            final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name);
+            final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel() + 1);
             convert.invoke();
 
             final HTable newTable = convert.gethTable();
+            newTables++;
             child.addHTable(newTable);
 
             memTables[i] = new MemTable(tableIdGen.getAndIncrement());
@@ -169,10 +142,11 @@ public class CompactionTask extends RecursiveAction {
       final MemTable memTable = memTables[i];
 
       if (!memTable.isEmpty()) {
-        final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name);
+        final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel() + 1);
         convert.invoke();
 
         final HTable newTable = convert.gethTable();
+        newTables++;
         child.addHTable(newTable);
       }
     }
@@ -184,16 +158,13 @@ public class CompactionTask extends RecursiveAction {
     }
 
     for (NodeN child : children) {
-      if (child.hTablesCount() > 1) {
-        if (compactionSet.contains(child)) {
-          compactionQueue.remove(child);
-        }
-
+      if (child.hTablesCount() >= 8) {
         compactionQueue.add(child);
-        compactionSet.add(child);
       }
     }
     final long end = System.nanoTime();
-    System.out.printf("Compaction is finished in %d ms. , %d tables were compacted \n", (end - start) / 1000_000, hTables.size());
+    System.out
+        .printf("Compaction is finished in %d ms. , %d tables were compacted, %d tables were created \n", (end - start) / 1000_000,
+            hTables.size(), newTables);
   }
 }

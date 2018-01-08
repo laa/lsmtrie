@@ -83,7 +83,7 @@ public class OLSMTrie {
     memTable.waitTillZeroModifiers();
 
     if (!memTable.isEmpty()) {
-      final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name);
+      final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name, 0);
       try {
         convertToHTableAction.invoke();
       } catch (IOException e) {
@@ -171,7 +171,7 @@ public class OLSMTrie {
       try {
         memTable.waitTillZeroModifiers();
 
-        final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name).invoke();
+        final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name, 0).invoke();
         final HTable hTable = convertToHTableAction.gethTable();
 
         node0.updateTable(hTable);

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
@@ -29,6 +30,7 @@ public class OLSMTrie {
   private final Registry registry;
 
   private final Semaphore compactionCounter = new Semaphore(0);
+  private volatile CompactionTask compactionTask;
 
   private final ExecutorService serviceThreads = Executors.newCachedThreadPool();
 
@@ -58,7 +60,7 @@ public class OLSMTrie {
 
     node0.addMemTable(table);
 
-    final CompactionTask compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root,
+    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root,
         registry);
     compactionPool.submit(compactionTask);
   }
@@ -87,6 +89,14 @@ public class OLSMTrie {
     }
 
     stopCompaction.set(true);
+    try {
+      compactionTask.get();
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    } catch (ExecutionException e) {
+      throw new IllegalStateException("Abnormal termintation of compaction task", e);
+    }
+
     serviceThreads.shutdown();
 
     try {

@@ -47,7 +47,7 @@ public class LSMTrieTest {
     removeRecursively(buildDirectory);
   }
 
-  //@Test
+  @Test
   public void testAddNkeys() throws Exception {
     int n = 2 * 8 * 8 * 156_672;
 
@@ -100,7 +100,7 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
-  //@Test
+  @Test
   public void testAddNNkeysOpenClose() throws Exception {
     int n = 2 * 8 * 8 * 156_672;
     final long seed = System.nanoTime();
@@ -145,7 +145,7 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
-  //@Test
+  @Test
   public void testAddDuplicates() throws Exception {
     int n = 1_000_000;
 
@@ -187,7 +187,7 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
-  //@Test
+  @Test
   public void testAddN2keys() throws Exception {
     int n = 8 * 8 * 156_672;
 
@@ -276,7 +276,7 @@ public class LSMTrieTest {
     lsmTrie.delete();
   }
 
-  //@Test
+  @Test
   public void mtTestOnlyFill() throws Exception {
     for (int k = 0; k < 1; k++) {
       int n = 2 * 8 * 156_672;
@@ -318,7 +318,7 @@ public class LSMTrieTest {
     }
   }
 
-  //@Test
+  @Test
   public void mtTestOnlyHafFillHalfRead() throws Exception {
     for (int k = 0; k < 10; k++) {
       int n = 4 * 8 * 156_672;

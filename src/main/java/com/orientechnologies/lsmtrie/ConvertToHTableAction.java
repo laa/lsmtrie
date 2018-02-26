@@ -15,7 +15,7 @@ class ConvertToHTableAction {
 
   private final MemTable memTable;
   private final String   name;
-  private final int level;
+  private final int      level;
 
   ConvertToHTableAction(MemTable memTable, Path root, String name, int level) {
     this.memTable = memTable;
@@ -24,11 +24,9 @@ class ConvertToHTableAction {
     this.level = level;
   }
 
-
   public HTable gethTable() {
     return hTable;
   }
-
 
   public ConvertToHTableAction invoke() throws IOException {
     final SerializedHTable serializedHTable = memTable.toHTable();
@@ -45,8 +43,6 @@ class ConvertToHTableAction {
       for (BloomFilter<byte[]> bloomFilter : serializedHTable.getBloomFilters()) {
         bloomFilter.writeTo(outputStream);
       }
-
-      bloomChannel.force(true);
     }
 
     Path htablePath = root.resolve(htableName);
@@ -54,7 +50,6 @@ class ConvertToHTableAction {
         .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
       htableChannel.write(serializedHTable.getHtableBuffer());
       serializedHTable.free();
-      htableChannel.force(true);
 
       hTable = new HTable(serializedHTable.getBloomFilters(),
           htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId, bloomFilterPath,

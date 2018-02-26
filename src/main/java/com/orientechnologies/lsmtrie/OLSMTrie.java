@@ -60,8 +60,7 @@ public class OLSMTrie {
 
     node0.addMemTable(table);
 
-    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root,
-        registry);
+    compactionTask = new CompactionTask(name, compactionCounter, stopCompaction, node0, tableIdGen, root);
     compactionPool.submit(compactionTask);
   }
 

@@ -21,6 +21,8 @@ public class NodeN implements Node {
   private final long       id;
   private final AtomicLong nodeIdGen;
 
+  private int lastDuplicationCheck;
+
   NodeN(int level, long id, AtomicLong nodeIdGen) {
     this.level = level;
     this.id = id;
@@ -96,6 +98,10 @@ public class NodeN implements Node {
     }
 
     return result;
+  }
+
+  public List<HTable> getHTables() {
+    return new ArrayList<>(tables.values());
   }
 
   @Override
@@ -183,5 +189,14 @@ public class NodeN implements Node {
   public boolean hasChildren() {
     return children.get() != null;
   }
+
+  public int getLastDuplicationCheck() {
+    return lastDuplicationCheck;
+  }
+
+  public void setLastDuplicationCheck(int lastDuplicationCheck) {
+    this.lastDuplicationCheck = lastDuplicationCheck;
+  }
+
 }
 

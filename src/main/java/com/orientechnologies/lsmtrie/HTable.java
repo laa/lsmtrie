@@ -20,6 +20,7 @@ public class HTable implements Table {
   private final Path bloomFilterPath;
   private final Path htablePath;
 
+
   private final LongAdder readersCount = new LongAdder();
 
   HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id, Path bloomFilterPath, Path htablePath) {
@@ -46,6 +47,7 @@ public class HTable implements Table {
       readersCount.decrement();
     }
   }
+
 
   public int bucketLength(int index) {
     readersCount.increment();
@@ -85,6 +87,20 @@ public class HTable implements Table {
       result[2] = value;
 
       return result;
+    } finally {
+      readersCount.decrement();
+    }
+  }
+
+  public byte[] getSHA(int bucketIndex, int entryIndex) {
+    readersCount.increment();
+    try {
+      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+      htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
+
+      final byte[] sha1 = new byte[SHA_1_SIZE];
+      htable.get(sha1);
+      return sha1;
     } finally {
       readersCount.decrement();
     }

@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.LongAdder;
 
 public class NodeN implements Node {
   private final AtomicInteger                       tablesCounter = new AtomicInteger();
@@ -107,7 +106,7 @@ public class NodeN implements Node {
   @Override
   public void removeTable(long id) {
     HTable hTable = tables.remove(id);
-    hTable.waitTillReaders();
+    hTable.blockReaders();
 
     hTable.clearBuffer();
 

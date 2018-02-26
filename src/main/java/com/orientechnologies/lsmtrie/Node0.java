@@ -1,7 +1,5 @@
 package com.orientechnologies.lsmtrie;
 
-import com.google.common.collect.Comparators;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -45,7 +43,7 @@ public class Node0 implements Node {
     final Table table = tableRef.get();
     if (table instanceof HTable) {
       final HTable hTable = (HTable) table;
-      hTable.waitTillReaders();
+      hTable.blockReaders();
       hTable.clearBuffer();
 
       try {

@@ -2,6 +2,7 @@ package com.orientechnologies.lsmtrie;
 
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnel;
+import com.google.common.hash.PrimitiveSink;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 
@@ -184,8 +185,7 @@ public class MemTable implements Table {
 
     for (int i = 0; i < BUCKETS_COUNT; i++) {
       buckets[i] = new Bucket(i);
-      bloomFilters[i] = BloomFilter
-          .create((Funnel<byte[]>) (bytes, primitiveSink) -> primitiveSink.putBytes(bytes), BUCKET_ENTRIES_COUNT, 0.001);
+      bloomFilters[i] = BloomFilter.create(new BytesFunnel(), BUCKET_ENTRIES_COUNT, 0.001);
     }
 
     overloaded = fillHeapData(pointer, buckets, bloomFilters);
@@ -388,6 +388,14 @@ public class MemTable implements Table {
     @Override
     public int hashCode() {
       return Arrays.hashCode(key);
+    }
+  }
+
+  private static class BytesFunnel implements Funnel<byte[]> {
+
+    @Override
+    public void funnel(byte[] from, PrimitiveSink into) {
+      into.putBytes(from);
     }
   }
 }

@@ -1,5 +1,6 @@
 package com.orientechnologies.lsmtrie;
 
+import com.concurrencyfreaks.locks.ScalableRWLock;
 import com.google.common.hash.BloomFilter;
 import sun.misc.Cleaner;
 import sun.nio.ch.DirectBuffer;
@@ -20,8 +21,7 @@ public class HTable implements Table {
   private final Path bloomFilterPath;
   private final Path htablePath;
 
-
-  private final LongAdder readersCount = new LongAdder();
+  private final ScalableRWLock modificationLock = new ScalableRWLock();
 
   HTable(BloomFilter<byte[]>[] bloomFilters, ByteBuffer buffer, long id, Path bloomFilterPath, Path htablePath) {
     this.bloomFilters = bloomFilters;
@@ -33,7 +33,11 @@ public class HTable implements Table {
 
   @Override
   public byte[] get(byte[] key, byte[] sha1) {
-    readersCount.increment();
+    final boolean locked = modificationLock.sharedTryLock();
+    if (!locked) {
+      return null;
+    }
+
     try {
       final int bucketIndex = HashUtils.bucketIndex(sha1);
       final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
@@ -44,25 +48,24 @@ public class HTable implements Table {
 
       return null;
     } finally {
-      readersCount.decrement();
+      modificationLock.sharedUnlock();
     }
   }
 
-
   public int bucketLength(int index) {
-    readersCount.increment();
+    modificationLock.sharedLock();
     try {
       final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
       htable.position(index * BUCKET_SIZE);
 
       return htable.getShort();
     } finally {
-      readersCount.decrement();
+      modificationLock.sharedUnlock();
     }
   }
 
   public byte[][] getBucketItem(int bucketIndex, int entryIndex) {
-    readersCount.increment();
+    modificationLock.sharedLock();
     try {
       final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
       htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
@@ -88,12 +91,12 @@ public class HTable implements Table {
 
       return result;
     } finally {
-      readersCount.decrement();
+      modificationLock.sharedUnlock();
     }
   }
 
   public byte[] getSHA(int bucketIndex, int entryIndex) {
-    readersCount.increment();
+    modificationLock.sharedLock();
     try {
       final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
       htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
@@ -102,14 +105,12 @@ public class HTable implements Table {
       htable.get(sha1);
       return sha1;
     } finally {
-      readersCount.decrement();
+      modificationLock.sharedUnlock();
     }
   }
 
-  public void waitTillReaders() {
-    while (readersCount.sum() > 0) {
-      Thread.yield();
-    }
+  public void blockReaders() {
+    modificationLock.exclusiveLock();
   }
 
   @Override

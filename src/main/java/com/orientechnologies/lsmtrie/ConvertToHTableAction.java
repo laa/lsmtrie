@@ -4,6 +4,7 @@ import com.google.common.hash.BloomFilter;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -48,13 +49,20 @@ class ConvertToHTableAction {
     Path htablePath = root.resolve(htableName);
     try (FileChannel htableChannel = FileChannel
         .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
-      htableChannel.write(serializedHTable.getHtableBuffer());
-      serializedHTable.free();
+
+      ByteBuffer buffer = serializedHTable.getHtableBuffer();
+      buffer.position(0);
+
+      int written = 0;
+      while (written < buffer.limit()) {
+        written += htableChannel.write(buffer);
+      }
 
       hTable = new HTable(serializedHTable.getBloomFilters(),
           htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId, bloomFilterPath,
           htablePath);
     }
+    serializedHTable.free();
 
     return this;
   }

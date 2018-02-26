@@ -189,18 +189,31 @@ public class LSMTrieLoadTest {
     }
 
     @Override
-    public Void call()  {
+    public Void call() {
       try {
         boolean sizeLimitReached = false;
         long add = 0;
         long read = 0;
         long update = 0;
 
+        long ops = 0;
+        long start = System.nanoTime();
+        long end = start;
+
         while (!stop.get()) {
 
           if ((add + update + read) > 0 && (add + update + read) % 500_000 == 0) {
-            System.out.printf("Thread %d, %,d operations were performed (%,d reads, %,d updates, %,d additions), db size is %,d\n",
-                Thread.currentThread().getId(), (add + +update + read), read, update, add, sizeCounter.get());
+            end = System.nanoTime();
+            long diff = (add + update + read) - ops;
+
+            long opsec = diff / ((end - start) / 1_000_000);
+
+            start = end;
+            ops += diff;
+
+            System.out.printf("Thread %d, %,d operations were performed (%,d reads, %,d updates, %,d additions), db size is %,d ,"
+                    + " speed is %,d op/ms\n", Thread.currentThread().getId(), (add + +update + read), read, update, add,
+                sizeCounter.get(), opsec);
           }
 
           if (!sizeLimitReached) {

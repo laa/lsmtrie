@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -19,8 +20,6 @@ public class NodeN implements Node {
   private final int        level;
   private final long       id;
   private final AtomicLong nodeIdGen;
-
-  private int lastDuplicationCheck;
 
   NodeN(int level, long id, AtomicLong nodeIdGen) {
     this.level = level;
@@ -99,8 +98,13 @@ public class NodeN implements Node {
     return result;
   }
 
-  public List<HTable> getHTables() {
-    return new ArrayList<>(tables.values());
+  public HTable getLatestHTable() {
+    Map.Entry<Long, HTable> latest = tables.firstEntry();
+    if (latest == null) {
+      return null;
+    }
+
+    return latest.getValue();
   }
 
   @Override
@@ -188,14 +192,5 @@ public class NodeN implements Node {
   public boolean hasChildren() {
     return children.get() != null;
   }
-
-  public int getLastDuplicationCheck() {
-    return lastDuplicationCheck;
-  }
-
-  public void setLastDuplicationCheck(int lastDuplicationCheck) {
-    this.lastDuplicationCheck = lastDuplicationCheck;
-  }
-
 }
 

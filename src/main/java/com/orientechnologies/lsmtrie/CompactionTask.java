@@ -71,12 +71,7 @@ public class CompactionTask extends RecursiveAction {
     final long start = System.nanoTime();
     int newTables = 0;
 
-    final MemTable[] memTables = new MemTable[8];
-    for (int i = 0; i < memTables.length; i++) {
-      memTables[i] = new MemTable(tableIdGen.getAndIncrement());
-    }
-
-    final List<HTable> hTables = node.getNOldestHTables(8);
+    final List<HTable> hTables = node.getNOldestHTables(1024);
     System.out.printf("Compaction is started for node from level %d which contains %d htables\n", node.getLevel(), hTables.size());
 
     if (hTables.size() < 8) {
@@ -90,15 +85,33 @@ public class CompactionTask extends RecursiveAction {
       } catch (InterruptedException e) {
         return;
       }
-    } else {
-      ((NodeN) node).setLastDuplicationCheck(0);
     }
 
-    final int[] initialTablesCount = new int[8];
     final NodeN[] children = node.getChildren();
 
-    for (int i = 0; i < 8; i++) {
-      initialTablesCount[i] = children[i].hTablesCount();
+    final MemTable[] memTables = new MemTable[8];
+    for (int i = 0; i < memTables.length; i++) {
+      memTables[i] = new MemTable(tableIdGen.getAndIncrement());
+    }
+
+    final HTable[] childHTablesToRemove = new HTable[8];
+    int childHTablesToRemoveCount = 0;
+
+    for (int i = 0; i < children.length; i++) {
+      final NodeN child = children[i];
+
+      final HTable hTable = child.getLatestHTable();
+      if (hTable != null) {
+        childHTablesToRemove[i] = hTable;
+        childHTablesToRemoveCount++;
+
+        final List<BucketLoader> bucketLoaders = new ArrayList<>(1024);
+        for (int n = 0; n < 1024; n++) {
+          bucketLoaders.add(new BucketLoader(n, hTable, memTables[i]));
+        }
+
+        ForkJoinTask.invokeAll(bucketLoaders);
+      }
     }
 
     for (HTable hTable : hTables) {
@@ -166,56 +179,18 @@ public class CompactionTask extends RecursiveAction {
       node.removeTable(hTableToRemove.getId());
     }
 
-    long duplicateCheckSum = 0;
-    long reCompactionTime = 0;
+    for (int i = 0; i < children.length; i++) {
+      final HTable hTable = childHTablesToRemove[i];
+
+      if (hTable != null) {
+        final NodeN child = children[i];
+        child.removeTable(hTable.getId());
+      }
+    }
 
     for (int i = 0; i < 8; i++) {
       final NodeN child = children[i];
-      int hTablesCount = child.hTablesCount();
-
-      if (child.getLevel() > 1) {
-        if (initialTablesCount[i] == 0) {
-          child.setLastDuplicationCheck(hTablesCount);
-        }
-
-        if (hTablesCount > 1 && initialTablesCount[i] > 0 && hTablesCount >= 2 * child.getLastDuplicationCheck()) {
-          final long startDuplicateCheck = System.nanoTime();
-
-          child.setLastDuplicationCheck(hTablesCount);
-
-          //check for duplicates
-          final List<HTable> hTableList = child.getNOldestHTables(hTablesCount);
-
-          final List<DuplicatesCheckerSubTask> duplicatesCheckers = new ArrayList<>();
-          for (int n = 0; n < 1024; n++) {
-            duplicatesCheckers.add(new DuplicatesCheckerSubTask(hTableList, n));
-          }
-
-          ForkJoinTask.invokeAll(duplicatesCheckers);
-
-          int uniqueItems = 0;
-          int totalItems = 0;
-
-          for (DuplicatesCheckerSubTask checker : duplicatesCheckers) {
-            uniqueItems += checker.getUniqueItems();
-            totalItems += checker.getAllItems();
-          }
-
-          final long endDuplicateCheck = System.nanoTime();
-          duplicateCheckSum += (endDuplicateCheck - startDuplicateCheck);
-
-          if (totalItems >= 2 * uniqueItems) {
-            System.out.printf("Amount of duplications is exceeded for the node level: %d index %d. "
-                + "Total items %d, unique items %d. Re-compaction is started\n", child.getLevel(), i, totalItems, uniqueItems);
-            final long reCompactStart = System.nanoTime();
-            newTables += reCompactItems(child, uniqueItems);
-            final long reCompactionEnd = System.nanoTime();
-            reCompactionTime += reCompactionEnd - reCompactStart;
-          }
-        }
-      }
-
-      hTablesCount = child.hTablesCount();
+      final int hTablesCount = child.hTablesCount();
 
       if (hTablesCount >= 8) {
         compactionQueue.add(child);
@@ -223,125 +198,8 @@ public class CompactionTask extends RecursiveAction {
     }
     final long end = System.nanoTime();
     System.out.printf(
-        "Compaction is finished in %d ms. ,%d tables were compacted, duplicates check time %d ms, recompaction time %d ms., %d tables were created \n",
-        (end - start) / 1000_000, hTables.size(), duplicateCheckSum / 1000_000, reCompactionTime / 1000_000, newTables);
+        "Compaction is finished in %d ms. ,%d tables were compacted, %d tables were created, %d child tables were removed\n",
+        (end - start) / 1000_000, hTables.size(), newTables, childHTablesToRemoveCount);
   }
 
-  private int reCompactItems(NodeN node, int uniqueItems) throws IOException {
-    int newTables = 0;
-
-    final List<HTable> hTables = node.getHTables();
-
-    final List<BucketLoaderSubTask> bucketLoaders = new ArrayList<>();
-
-    for (int i = 0; i < 1024; i++) {
-      bucketLoaders.add(new BucketLoaderSubTask(hTables, i));
-    }
-
-    ForkJoinTask.invokeAll(bucketLoaders);
-
-    for (BucketLoaderSubTask subTask : bucketLoaders) {
-      subTask.reinitialize();
-    }
-
-    ForkJoinTask.invokeAll(bucketLoaders);
-
-    @SuppressWarnings("unchecked")
-    final List<byte[][]>[] buckets = new List[1024];
-
-    //compact htables into buckets
-    for (int i = 0; i < buckets.length; i++) {
-      final BucketLoaderSubTask loaderSubTask = bucketLoaders.get(i);
-      buckets[i] = loaderSubTask.getBucket();
-    }
-
-    List<ReCompactionSubTask> reCompactionSubTasks = new ArrayList<>();
-    MemTable memTable = new MemTable(tableIdGen.getAndIncrement());
-
-    boolean atLeastOneIntervalPresent = true;
-    int[] startIntervals = new int[1024];
-
-    final int intervalStep = 10;
-    while (atLeastOneIntervalPresent) {
-      atLeastOneIntervalPresent = false;
-
-      int[] endIntervals = new int[1024];
-      for (int i = 0; i < 1024; i++) {
-        final int startIndex = startIntervals[i];
-        final List<byte[][]> bucket = buckets[i];
-
-        final int bucketSize = bucket.size();
-
-        if (startIndex >= bucketSize) {
-          endIntervals[i] = bucketSize;
-          continue;
-        }
-
-        final int endIndex = startIndex + intervalStep;
-
-        if (endIndex < bucketSize) {
-          endIntervals[i] = endIndex;
-        } else {
-          endIntervals[i] = bucketSize;
-        }
-
-        assert endIntervals[i] <= bucketSize;
-        assert endIntervals[i] - startIntervals[i] >= 0;
-        assert startIntervals[i] >= 0;
-
-        if (!atLeastOneIntervalPresent) {
-          atLeastOneIntervalPresent = startIndex < bucketSize;
-        }
-      }
-
-      if (atLeastOneIntervalPresent) {
-        reCompactionSubTasks.add(new ReCompactionSubTask(memTable, buckets, startIntervals, endIntervals));
-
-        System.arraycopy(endIntervals, 0, startIntervals, 0, startIntervals.length);
-      }
-    }
-
-    ForkJoinTask.invokeAll(reCompactionSubTasks);
-
-    while (true) {
-      if (memTable.isFilled()) {
-        final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel());
-        convert.invoke();
-
-        final HTable newTable = convert.gethTable();
-        newTables++;
-        node.addHTable(newTable);
-
-        memTable = new MemTable(tableIdGen.getAndIncrement());
-      }
-
-      reCompactionSubTasks.removeIf(ReCompactionSubTask::isComplete);
-
-      if (reCompactionSubTasks.isEmpty()) {
-        break;
-      }
-
-      for (ReCompactionSubTask reCompactionSubTask : reCompactionSubTasks) {
-        reCompactionSubTask.setMemTable(memTable);
-        reCompactionSubTask.reinitialize();
-      }
-
-      ForkJoinTask.invokeAll(reCompactionSubTasks);
-    }
-
-    if (!memTable.isEmpty()) {
-      final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel());
-      convert.invoke();
-
-      final HTable newTable = convert.gethTable();
-      newTables++;
-      node.addHTable(newTable);
-    }
-
-    for (HTable hTable : hTables) {
-      node.removeTable(hTable.getId());
-    }
-
-    return newTables;
-  }
 }

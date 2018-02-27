@@ -6,6 +6,8 @@ import com.google.common.hash.PrimitiveSink;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -176,6 +178,7 @@ public class MemTable implements Table {
     }
 
     final Pointer pointer = new Pointer(ptr);
+    final ByteBuffer buffer = pointer.getByteBuffer(0, size).order(ByteOrder.nativeOrder());
 
     Bucket[] buckets = new Bucket[BUCKETS_COUNT];
     @SuppressWarnings("unchecked")
@@ -188,38 +191,34 @@ public class MemTable implements Table {
       bloomFilters[i] = BloomFilter.create(new BytesFunnel(), BUCKET_ENTRIES_COUNT, 0.001);
     }
 
-    overloaded = fillHeapData(pointer, buckets, bloomFilters);
+    overloaded = fillHeapData(buffer, buckets, bloomFilters);
 
     if (overloaded) {
       moveOverloadedData(buckets);
     }
 
-    fillInMapData(pointer, buckets);
+    fillInMapData(buffer, buckets);
 
-    return new SerializedHTable(size, pointer, bloomFilters);
+    return new SerializedHTable(size, pointer, buffer, bloomFilters);
   }
 
-  private void fillInMapData(Pointer pointer, Bucket[] buckets) {
+  private void fillInMapData(ByteBuffer buffer, Bucket[] buckets) {
     int counter = 0;
-    for (Bucket bucket : buckets) {
-      int entryOffset = counter * BUCKET_SIZE;
 
-      pointer.setShort(entryOffset, (short) bucket.entries.size());
-      entryOffset += 2;
+    for (Bucket bucket : buckets) {
+      buffer.position(counter * BUCKET_SIZE);
+      buffer.putShort((short) bucket.entries.size());
 
       for (EntryRef entryRef : bucket.entries) {
-        pointer.write(entryOffset, entryRef.sha1, 0, entryRef.sha1.length);
-        entryOffset += entryRef.sha1.length;
-        pointer.setInt(entryOffset, entryRef.entryOffset);
-        entryOffset += 4;
+        buffer.put(entryRef.sha1);
+        buffer.putInt(entryRef.entryOffset);
       }
 
-      entryOffset = (counter + 1) * BUCKET_SIZE - DEST_BUCKET_OFFSET;
+      buffer.position((counter + 1) * BUCKET_SIZE - DEST_BUCKET_OFFSET);
 
-      pointer.setInt(entryOffset, bucket.destBucket);
-      entryOffset += 4;
+      buffer.putInt(bucket.destBucket);
 
-      pointer.setLong(entryOffset, bucket.waterMark);
+      buffer.putLong(bucket.waterMark);
       counter++;
     }
   }
@@ -245,8 +244,8 @@ public class MemTable implements Table {
     }
   }
 
-  private boolean fillHeapData(Pointer pointer, Bucket[] buckets, BloomFilter<byte[]>[] bloomFilters) {
-    int dataOffset = HEAP_DATA_OFFSET;
+  private boolean fillHeapData(ByteBuffer buffer, Bucket[] buckets, BloomFilter<byte[]>[] bloomFilters) {
+    buffer.position(HEAP_DATA_OFFSET);
 
     boolean overloaded = false;
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
@@ -257,22 +256,18 @@ public class MemTable implements Table {
 
       final EntryRef entryRef = new EntryRef();
       entryRef.sha1 = sha1;
-      entryRef.entryOffset = dataOffset;
+      entryRef.entryOffset = buffer.position();
 
       bucket.entries.add(entryRef);
 
       final byte[] key = entry.getKey().key;
       final byte[] value = entry.getValue();
 
-      pointer.setShort(dataOffset, (short) key.length);
-      dataOffset += 2;
-      pointer.write(dataOffset, key, 0, key.length);
-      dataOffset += key.length;
+      buffer.putShort((short) key.length);
+      buffer.put(key);
 
-      pointer.setShort(dataOffset, (short) value.length);
-      dataOffset += 2;
-      pointer.write(dataOffset, value, 0, value.length);
-      dataOffset += value.length;
+      buffer.putShort((short) value.length);
+      buffer.put(value);
 
       final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
       bloomFilter.put(key);

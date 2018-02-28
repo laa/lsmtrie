@@ -21,12 +21,6 @@
 
     <dependencies>
         <dependency>
-            <groupId>net.java.dev.jna</groupId>
-            <artifactId>jna</artifactId>
-            <version>4.5.0</version>
-        </dependency>
-
-        <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>23.6-jre</version>
@@ -71,7 +65,8 @@
             <artifactId>apiguardian-api</artifactId>
             <version>1.0.0</version>
             <scope>test</scope>
-        </dependency>    </dependencies>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>

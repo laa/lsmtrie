@@ -3,8 +3,6 @@ package com.orientechnologies.lsmtrie;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnel;
 import com.google.common.hash.PrimitiveSink;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -169,16 +167,8 @@ public class MemTable implements Table {
   }
 
   public SerializedHTable toHTable() {
-    int size = memorySize();
-
-    final long ptr = Native.malloc(size);
-
-    if (ptr == 0) {
-      throw new IllegalStateException("Can not allocate memory for serialization of MemTable");
-    }
-
-    final Pointer pointer = new Pointer(ptr);
-    final ByteBuffer buffer = pointer.getByteBuffer(0, size).order(ByteOrder.nativeOrder());
+    final int size = memorySize();
+    final ByteBuffer buffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder());
 
     Bucket[] buckets = new Bucket[BUCKETS_COUNT];
     @SuppressWarnings("unchecked")
@@ -199,7 +189,7 @@ public class MemTable implements Table {
 
     fillInMapData(buffer, buckets);
 
-    return new SerializedHTable(size, pointer, buffer, bloomFilters);
+    return new SerializedHTable(size, buffer, bloomFilters);
   }
 
   private void fillInMapData(ByteBuffer buffer, Bucket[] buckets) {

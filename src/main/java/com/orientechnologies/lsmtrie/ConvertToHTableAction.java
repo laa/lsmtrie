@@ -54,7 +54,8 @@ class ConvertToHTableAction {
       buffer.position(0);
 
       int written = 0;
-      while (written < buffer.limit()) {
+      final long htableSize = serializedHTable.getHtableSize();
+      while (written < htableSize) {
         written += htableChannel.write(buffer);
       }
 

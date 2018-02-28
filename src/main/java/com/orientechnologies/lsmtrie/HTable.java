@@ -109,21 +109,16 @@ public class HTable implements Table {
     }
   }
 
-  public void blockReaders() {
-    modificationLock.exclusiveLock();
-  }
-
   @Override
   public long getId() {
     return id;
   }
 
   public void clearBuffer() {
+    modificationLock.exclusiveLock();
     final DirectBuffer dbf = (DirectBuffer) buffer;
     final Cleaner cleaner = dbf.cleaner();
-    if (cleaner != null) {
-      cleaner.clean();
-    }
+    cleaner.clean();
   }
 
   public Path getBloomFilterPath() {

@@ -43,7 +43,6 @@ public class Node0 implements Node {
     final Table table = tableRef.get();
     if (table instanceof HTable) {
       final HTable hTable = (HTable) table;
-      hTable.blockReaders();
       hTable.clearBuffer();
 
       try {

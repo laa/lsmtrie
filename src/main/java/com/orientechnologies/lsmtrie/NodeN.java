@@ -110,8 +110,6 @@ public class NodeN implements Node {
   @Override
   public void removeTable(long id) {
     HTable hTable = tables.remove(id);
-    hTable.blockReaders();
-
     hTable.clearBuffer();
 
     try {

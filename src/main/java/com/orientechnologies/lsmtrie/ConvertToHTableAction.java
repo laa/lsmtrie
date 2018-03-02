@@ -48,7 +48,7 @@ class ConvertToHTableAction {
 
     Path htablePath = root.resolve(htableName);
     try (FileChannel htableChannel = FileChannel
-        .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.READ)) {
+        .open(htablePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.APPEND)) {
 
       ByteBuffer buffer = serializedHTable.getHtableBuffer();
       buffer.position(0);
@@ -58,12 +58,18 @@ class ConvertToHTableAction {
       while (written < htableSize) {
         written += htableChannel.write(buffer);
       }
+    }
+    serializedHTable.free();
+
+    try (FileChannel htableChannel = FileChannel.open(htablePath, StandardOpenOption.READ)) {
+      if (htableChannel.size() != serializedHTable.getHtableSize()) {
+        throw new IllegalStateException("Invalid size of file");
+      }
 
       hTable = new HTable(serializedHTable.getBloomFilters(),
           htableChannel.map(FileChannel.MapMode.READ_ONLY, 0, serializedHTable.getHtableSize()), tableId, bloomFilterPath,
           htablePath);
     }
-    serializedHTable.free();
 
     return this;
   }

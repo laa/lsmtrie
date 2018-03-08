@@ -125,6 +125,8 @@ public class Node0 implements Node {
     return result;
   }
 
+
+
   @Override
   public int getLevel() {
     return 0;

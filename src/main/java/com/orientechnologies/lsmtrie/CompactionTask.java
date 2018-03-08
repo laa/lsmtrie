@@ -41,12 +41,30 @@ public class CompactionTask extends RecursiveAction {
           final boolean compactionLimitIsReached = compactionCounter.tryAcquire(8, 1, TimeUnit.SECONDS);
 
           if (compactionLimitIsReached) {
-            moveHTablesDown(node0);
+            moveHTablesDown(node0, 8);
 
             NodeN node;
 
             while ((node = compactionQueue.poll()) != null) {
-              moveHTablesDown(node);
+              moveHTablesDown(node, 0);
+            }
+          } else {
+            if (!stop.get()) {
+              final Node notEmptyNode = findFirstNotEmptyNode(node0);
+              if (notEmptyNode == null) {
+                continue;
+              }
+
+              System.out.println("No overflown nodes found,but not empty node was found compaction is started from it");
+              if (!stop.get()) {
+                moveHTablesDown(notEmptyNode, 0);
+
+                NodeN node;
+
+                while ((node = compactionQueue.poll()) != null) {
+                  moveHTablesDown(node, 0);
+                }
+              }
             }
           }
         } catch (IOException e) {
@@ -61,21 +79,39 @@ public class CompactionTask extends RecursiveAction {
     }
   }
 
-  private void moveHTablesDown(Node node) throws IOException {
+  private Node findFirstNotEmptyNode(Node node) {
+    if (!node.hasChildren()) {
+      return null;
+    }
+
+    final List<HTable> hTables = node.getNOldestHTables(1);
+
+    if (!hTables.isEmpty()) {
+      return node;
+    }
+
+    final NodeN[] children = node.getChildren();
+    for (NodeN child : children) {
+      final Node notEmptyNode = findFirstNotEmptyNode(child);
+
+      if (notEmptyNode != null) {
+        return notEmptyNode;
+      }
+    }
+
+    return null;
+  }
+
+  private void moveHTablesDown(Node node, int acquiredPermits) throws IOException {
     final long start = System.nanoTime();
     int newTables = 0;
 
     final List<HTable> hTables = node.getNOldestHTables(1024);
     System.out.printf("Compaction is started for node from level %d which contains %d htables\n", node.getLevel(), hTables.size());
 
-    if (hTables.size() < 8) {
-      System.out.println("Compaction is finished nothing to compact");
-      return;
-    }
-
     if (node instanceof Node0) {
       try {
-        compactionCounter.acquire(hTables.size() - 8);
+        compactionCounter.acquire(hTables.size() - acquiredPermits);
       } catch (InterruptedException e) {
         return;
       }

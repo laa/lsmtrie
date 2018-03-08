@@ -54,17 +54,6 @@ public class HTable implements Table {
     }
   }
 
-  public int bucketLength(int index) {
-    modificationLock.sharedLock();
-    try {
-      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
-      htable.position(index * BUCKET_SIZE);
-
-      return 0xFFFF & htable.getShort();
-    } finally {
-      modificationLock.sharedUnlock();
-    }
-  }
 
   public Iterator<byte[][]> bucketIterator(final int bucketIndex) {
     final Iterator<byte[][]> iterator;

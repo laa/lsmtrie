@@ -278,7 +278,7 @@ public class LSMTrieTest {
 
   @Test
   public void mtTestOnlyFill() throws Exception {
-    for (int k = 0; k < 1; k++) {
+    for (int k = 0; k < 10; k++) {
       int n = 2 * 8 * 156_672;
       final ExecutorService executorService = Executors.newCachedThreadPool();
       final List<Future<Void>> futures = new ArrayList<>();
@@ -393,7 +393,7 @@ public class LSMTrieTest {
       futures.add(executorService.submit(new Modifier(500_000, 20_000_000, sizeCounter, data, striped, lsmTrie, stop)));
     }
 
-    int sec = 10 * 60 * 60;
+    final int sec = 60 * 60;
 
     System.out.printf("Wait during %d second\n", sec);
     Thread.sleep(sec * 1000);
@@ -486,7 +486,7 @@ public class LSMTrieTest {
     }
 
     @Override
-    public int compareTo(ByteHolder other) {
+    public int compareTo(@SuppressWarnings("NullableProblems") ByteHolder other) {
 
       if (other.bytes.length == bytes.length) {
         for (int i = 0; i < bytes.length; i++) {
@@ -553,7 +553,7 @@ public class LSMTrieTest {
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       try {
         for (int i = 0; i < countOfItemsToAdd; i++) {
           final byte[] key = generateKey(random);
@@ -596,7 +596,7 @@ public class LSMTrieTest {
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       int counter = 0;
       try {
         while (!stop.get()) {
@@ -667,7 +667,7 @@ public class LSMTrieTest {
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       try {
         boolean sizeLimitReached = false;
         long add = 0;

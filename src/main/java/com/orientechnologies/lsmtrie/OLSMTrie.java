@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -34,15 +33,7 @@ public class OLSMTrie {
 
   private final ExecutorService serviceThreads = Executors.newCachedThreadPool();
 
-  private final ThreadLocal<MessageDigest> messageDigest = ThreadLocal.withInitial(() -> {
-    try {
-      return MessageDigest.getInstance("SHA-1");
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-1 algorithm is not implemented", e);
-    }
-  });
-
-  public OLSMTrie(String name, Path root) {
+  OLSMTrie(String name, Path root) {
     this.name = name;
     this.root = root;
     this.registry = new Registry(root, name);
@@ -69,7 +60,7 @@ public class OLSMTrie {
     final MemTable memTable = current.get();
     memTable.waitTillZeroModifiers();
 
-    if (!memTable.isEmpty()) {
+    if (memTable.isNotEmpty()) {
       final ConvertToHTableAction convertToHTableAction = new ConvertToHTableAction(memTable, root, name, 0);
       try {
         convertToHTableAction.invoke();
@@ -140,7 +131,7 @@ public class OLSMTrie {
   }
 
   public void put(byte[] key, byte[] value) {
-    final MessageDigest digest = messageDigest.get();
+    final MessageDigest digest = MessageDigestHolder.instance().get();
     digest.reset();
 
     final byte[] sha1 = digest.digest(key);
@@ -168,7 +159,7 @@ public class OLSMTrie {
   }
 
   public byte[] get(byte[] key) {
-    final MessageDigest digest = messageDigest.get();
+    final MessageDigest digest = MessageDigestHolder.instance().get();
     digest.reset();
 
     final byte[] sha1 = digest.digest(key);

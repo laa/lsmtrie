@@ -3,20 +3,14 @@ package com.orientechnologies.lsmtrie;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.Set;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class CompactionTask extends RecursiveAction {
@@ -105,8 +99,9 @@ public class CompactionTask extends RecursiveAction {
         childHTablesToRemove[i] = hTable;
         childHTablesToRemoveCount++;
 
-        final List<BucketLoader> bucketLoaders = new ArrayList<>(1024);
-        for (int n = 0; n < 1024; n++) {
+        final List<BucketLoader> bucketLoaders = new ArrayList<>(Table.BUCKETS_COUNT);
+
+        for (int n = 0; n < Table.BUCKETS_COUNT; n++) {
           bucketLoaders.add(new BucketLoader(n, hTable, memTables[i]));
         }
 
@@ -115,48 +110,44 @@ public class CompactionTask extends RecursiveAction {
     }
 
     for (HTable hTable : hTables) {
-      boolean isMoved = false;
+      boolean isCompleted = false;
 
-      int[][] bucketsStartIndex = new int[1024][2];
-
-      for (int i = 0; i < 1024; i++) {
-        bucketsStartIndex[i] = new int[] { i, 0 };
+      List<CompactionSubTask> subTasks = new ArrayList<>(Table.BUCKETS_COUNT);
+      for (int i = 0; i < Table.BUCKETS_COUNT; i++) {
+        subTasks.add(new CompactionSubTask(memTables, hTable, i, node.getLevel() + 1));
       }
 
-      while (!isMoved) {
-        final List<CompactionDataMoveSubTask> moveSubTasks = new ArrayList<>();
-        for (int[] entry : bucketsStartIndex) {
-          moveSubTasks.add(new CompactionDataMoveSubTask(memTables, hTable, entry[0], entry[1], node.getLevel() + 1));
-        }
-
-        ForkJoinTask.invokeAll(moveSubTasks);
+      while (!isCompleted) {
+        ForkJoinTask.invokeAll(subTasks);
 
         for (int i = 0; i < children.length; i++) {
-          final NodeN child = children[i];
-
           final MemTable memTable = memTables[i];
+
           if (memTable.isFilled()) {
             final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel() + 1);
             convert.invoke();
 
             final HTable newTable = convert.gethTable();
             newTables++;
+
+            final NodeN child = children[i];
             child.addHTable(newTable);
 
             memTables[i] = new MemTable(tableIdGen.getAndIncrement());
           }
         }
 
-        final List<int[]> notCompletedBuckets = new ArrayList<>();
-        for (CompactionDataMoveSubTask subTask : moveSubTasks) {
+        final List<CompactionSubTask> notCompletedTasks = new ArrayList<>();
+        for (CompactionSubTask subTask : subTasks) {
           if (!subTask.isComplete()) {
-            notCompletedBuckets.add(new int[] { subTask.getBucketIndex(), subTask.getNextProcessedItem() });
+            notCompletedTasks.add(subTask);
           }
         }
 
-        isMoved = notCompletedBuckets.isEmpty();
-        if (!isMoved) {
-          bucketsStartIndex = notCompletedBuckets.toArray(new int[][] {});
+        isCompleted = notCompletedTasks.isEmpty();
+        if (!isCompleted) {
+          notCompletedTasks.forEach(ForkJoinTask::reinitialize);
+          subTasks = notCompletedTasks;
         }
       }
     }
@@ -165,7 +156,7 @@ public class CompactionTask extends RecursiveAction {
       final NodeN child = children[i];
       final MemTable memTable = memTables[i];
 
-      if (!memTable.isEmpty()) {
+      if (memTable.isNotEmpty()) {
         final ConvertToHTableAction convert = new ConvertToHTableAction(memTable, root, name, node.getLevel() + 1);
         convert.invoke();
 

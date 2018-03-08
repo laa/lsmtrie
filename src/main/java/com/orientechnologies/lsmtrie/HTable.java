@@ -9,6 +9,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -42,7 +44,7 @@ public class HTable implements Table {
       final int bucketIndex = HashUtils.bucketIndex(sha1);
       final BloomFilter<byte[]> bloomFilter = bloomFilters[bucketIndex];
 
-      if (bloomFilter.mightContain(key)) {
+      if (bloomFilter.mightContain(sha1)) {
         return readValueFormBucket(key, sha1, bucketIndex);
       }
 
@@ -58,55 +60,112 @@ public class HTable implements Table {
       final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
       htable.position(index * BUCKET_SIZE);
 
-      return htable.getShort();
+      return 0xFFFF & htable.getShort();
     } finally {
       modificationLock.sharedUnlock();
     }
   }
 
-  public byte[][] getBucketItem(int bucketIndex, int entryIndex) {
+  public Iterator<byte[][]> bucketIterator(final int bucketIndex) {
+    final Iterator<byte[][]> iterator;
+
     modificationLock.sharedLock();
     try {
-      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
-      htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
+      iterator = new Iterator<byte[][]>() {
+        final int entriesCount;
 
-      final byte[] sha1 = new byte[SHA_1_SIZE];
-      htable.get(sha1);
+        final byte[] data;
+        final ByteBuffer bucket;
+        final ByteBuffer htable;
 
-      final int entryOffset = htable.getInt();
+        int currentPosition;
+        int processedEntries;
 
-      htable.position(entryOffset);
-      final int keyLength = htable.getShort();
-      final byte[] key = new byte[keyLength];
-      htable.get(key);
+        {
+          htable = buffer.duplicate().order(ByteOrder.nativeOrder());
+          htable.position(bucketIndex * BUCKET_SIZE);
 
-      final int valueLength = htable.getShort();
-      final byte[] value = new byte[valueLength];
-      htable.get(value);
+          data = new byte[BUCKET_SIZE];
+          htable.get(data);
 
-      final byte[][] result = new byte[3][];
-      result[0] = sha1;
-      result[1] = key;
-      result[2] = value;
+          bucket = ByteBuffer.wrap(data).order(ByteOrder.nativeOrder());
+          entriesCount = 0xFFFF & bucket.getShort();
+          currentPosition = BUCKET_ENTRIES_COUNT_SIZE;
+        }
 
-      return result;
+        @Override
+        public boolean hasNext() {
+          return processedEntries < entriesCount;
+        }
+
+        @Override
+        public byte[][] next() {
+          if (processedEntries >= entriesCount) {
+            throw new NoSuchElementException();
+          }
+
+          final byte entryType = data[currentPosition];
+          currentPosition++;
+
+          if (entryType == EMBEDDED_ENTREE_TYPE) {
+            final int keyLength = data[currentPosition] & 0xFF;
+            currentPosition++;
+
+            final byte[] key = new byte[keyLength];
+            System.arraycopy(data, currentPosition, key, 0, keyLength);
+            currentPosition += keyLength;
+
+            final int valueLength = data[currentPosition] & 0xFF;
+            currentPosition++;
+
+            final byte[] value = new byte[valueLength];
+            System.arraycopy(data, currentPosition, value, 0, valueLength);
+            currentPosition += valueLength;
+
+            processedEntries++;
+
+            return new byte[][] { null, key, value };
+          }
+
+          if (entryType == HEAP_ENTREE_TYPE) {
+            final byte[] sha1 = new byte[SHA_1_SIZE];
+            System.arraycopy(data, 0, sha1, 0, SHA_1_SIZE);
+            currentPosition += SHA_1_SIZE;
+
+            final int heapReference = bucket.getInt(currentPosition);
+            currentPosition += HEAP_REFERENCE_LENGTH;
+
+            final byte[] key;
+            final byte[] value;
+
+            modificationLock.sharedLock();
+            try {
+              htable.position(heapReference);
+
+              final int keyLength = htable.getShort() & 0xFFFF;
+              key = new byte[keyLength];
+              htable.get(key);
+
+              final int valueLength = htable.getShort() & 0xFFFF;
+              value = new byte[valueLength];
+              htable.get(value);
+            } finally {
+              modificationLock.sharedUnlock();
+            }
+
+            processedEntries++;
+            return new byte[][] { sha1, key, value };
+          }
+
+          throw new IllegalStateException("Illegal entry type " + entryType);
+        }
+      };
+
     } finally {
       modificationLock.sharedUnlock();
     }
-  }
 
-  public byte[] getSHA(int bucketIndex, int entryIndex) {
-    modificationLock.sharedLock();
-    try {
-      final ByteBuffer htable = buffer.duplicate().order(ByteOrder.nativeOrder());
-      htable.position(bucketIndex * BUCKET_SIZE + ENTRY_SIZE * entryIndex + 2);
-
-      final byte[] sha1 = new byte[SHA_1_SIZE];
-      htable.get(sha1);
-      return sha1;
-    } finally {
-      modificationLock.sharedUnlock();
-    }
+    return iterator;
   }
 
   @Override
@@ -161,39 +220,77 @@ public class HTable implements Table {
     }
 
     bucket.position(0);
-    final int entriesCount = bucket.getShort();
+    final int entriesCount = bucket.getShort() & 0xFFFF;
+    int position = 2;
 
     for (int i = 0; i < entriesCount; i++) {
-      int offset = 2 + ENTRY_SIZE * i;
-      boolean equals = true;
-      for (int n = 0; n < SHA_1_SIZE; n++) {
-        if (data[offset] != sha1[n]) {
-          equals = false;
-          break;
+      final byte entryType = data[position];
+      position++;
+
+      if (entryType == EMBEDDED_ENTREE_TYPE) {
+        final int keyLength = data[position] & 0xFF;
+        position++;
+
+        boolean found = true;
+
+        if (keyLength == key.length) {
+          for (int n = 0; n < keyLength; n++) {
+            if (key[n] != data[n + position]) {
+              found = false;
+              break;
+            }
+          }
+        } else {
+          found = false;
         }
 
-        offset++;
-      }
+        position += keyLength;
+        final int valueLength = data[position] & 0xFF;
+        position++;
 
-      offset += DATA_OFFSET_SIZE;
-
-      if (equals) {
-        bucket.position(offset - DATA_OFFSET_SIZE);
-
-        final int entryOffset = bucket.getInt();
-
-        htable.position(entryOffset);
-        final int keyLength = htable.getShort();
-        final byte[] entryKey = new byte[keyLength];
-        htable.get(entryKey);
-
-        if (Arrays.equals(key, entryKey)) {
-          final int valueLength = htable.getShort();
+        if (found) {
           final byte[] value = new byte[valueLength];
-          htable.get(value);
+          System.arraycopy(data, position, value, 0, valueLength);
 
           return value;
+        } else {
+          position += valueLength;
         }
+      } else if (entryType == HEAP_ENTREE_TYPE) {
+        final int shaStart = position;
+        boolean found = true;
+        for (int n = 0; n < SHA_1_SIZE; n++) {
+          if (sha1[n] != data[shaStart + n]) {
+            found = false;
+            break;
+          }
+        }
+
+        position += SHA_1_SIZE;
+        if (found) {
+          bucket.position(position);
+          final int heapRef = bucket.getInt();
+          position += HEAP_REFERENCE_LENGTH;
+
+          htable.position(heapRef);
+
+          final int keyLength = htable.getShort() & 0xFFFF;
+          final byte[] entryKey = new byte[keyLength];
+          htable.get(entryKey);
+
+          if (Arrays.equals(key, entryKey)) {
+            final int valueLength = htable.getShort() & 0xFFFF;
+
+            final byte[] value = new byte[valueLength];
+            htable.get(value);
+
+            return value;
+          }
+        } else {
+          position += HEAP_REFERENCE_LENGTH;
+        }
+      } else {
+        throw new IllegalStateException("Invalid entry type " + entryType);
       }
     }
 
@@ -204,7 +301,7 @@ public class HTable implements Table {
     final int offset = BUCKET_SIZE - DEST_BUCKET_OFFSET;
     bucket.position(offset);
 
-    return bucket.getInt();
+    return bucket.getShort();
   }
 
   private long getWaterMark(ByteBuffer bucket) {

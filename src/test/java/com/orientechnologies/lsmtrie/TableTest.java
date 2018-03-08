@@ -1,6 +1,7 @@
 package com.orientechnologies.lsmtrie;
 
 import com.google.common.util.concurrent.Striped;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.security.MessageDigest;
@@ -9,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -64,6 +66,8 @@ public class TableTest {
         assertTable(entries, nonExisting, hTable, digest);
         long assertHTableEnd = System.nanoTime();
 
+        assertHTableIterator(entries, hTable, digest);
+
         serializedHTable.free();
         if (i == 17) {
           System.out
@@ -80,6 +84,7 @@ public class TableTest {
     long assertHTableTime = 0;
     long convertHTableTime = 0;
     int counter = 0;
+    long totalSize = 0;
 
     for (int k = 0; k < 3600; k++) {
       final Map<ByteHolder, ByteHolder> data = new HashMap<>();
@@ -114,7 +119,7 @@ public class TableTest {
         }
       } while (added);
 
-      assertEquals(156672, data.size());
+      totalSize += data.size();
 
       Set<ByteHolder> absentValues = generateNNotExistingEntries(data.size(), data, random);
       assertTable(data, absentValues, memTable, digest);
@@ -123,11 +128,11 @@ public class TableTest {
       final SerializedHTable serializedHTable = memTable.toHTable();
       long toHTableEnd = System.nanoTime();
 
-      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1, null,
-          null);
+      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1, null, null);
       long assertHTableStart = System.nanoTime();
       assertTable(data, absentValues, hTable, digest);
       long assertHTableEnd = System.nanoTime();
+      assertHTableIterator(data, hTable, digest);
 
       serializedHTable.free();
       assertHTableTime += (assertHTableEnd - assertHTableStart);
@@ -136,7 +141,7 @@ public class TableTest {
     }
 
     System.out.printf("htable conversion time : %d ns, htable assert time %d ns, %d ns/item\n", convertHTableTime / counter,
-        assertHTableTime / counter, assertHTableTime / counter / 156672);
+        assertHTableTime / counter, assertHTableTime / totalSize);
   }
 
   @Test
@@ -157,8 +162,6 @@ public class TableTest {
         future.get();
       }
 
-      assertEquals(156_672, memTable.size());
-      assertTrue(memTable.memorySize() <= 67_109_064);
       assertTrue(memTable.isFilled());
       MessageDigest digest = MessageDigest.getInstance("SHA-1");
       assertTable(map, Collections.emptySet(), memTable, digest);
@@ -180,8 +183,6 @@ public class TableTest {
         future.get();
       }
 
-      assertEquals(156_672, memTable.size());
-      assertTrue(memTable.memorySize() <= 67_109_064);
       assertTrue(memTable.isFilled());
     }
   }
@@ -257,6 +258,29 @@ public class TableTest {
     }
   }
 
+  private void assertHTableIterator(Map<ByteHolder, ByteHolder> existingValues, HTable table, MessageDigest digest) {
+    int counter = 0;
+
+    for (int i = 0; i < Table.BUCKETS_COUNT; i++) {
+      final Iterator<byte[][]> bucketIterator = table.bucketIterator(i);
+
+      while (bucketIterator.hasNext()) {
+        final byte[][] entry = bucketIterator.next();
+        Assert.assertArrayEquals(existingValues.get(new ByteHolder(entry[1])).bytes, entry[2]);
+        counter++;
+
+        if (entry[0] != null) {
+          digest.reset();
+
+          final byte[] sha1 = digest.digest(entry[1]);
+          Assert.assertArrayEquals(sha1, entry[0]);
+        }
+      }
+    }
+
+    Assert.assertEquals(existingValues.size(), counter);
+  }
+
   private class ByteHolder {
     private final byte[] bytes;
 
@@ -295,7 +319,7 @@ public class TableTest {
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       while (true) {
         final byte[] key = generateKey(random);
         final byte[] value = generateValue(random);

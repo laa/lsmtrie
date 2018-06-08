@@ -42,8 +42,7 @@ public class MemTable implements Table {
 
   private final ConcurrentHashMap<KeyHolder, byte[]> map              = new ConcurrentHashMap<>(SUPPOSED_ENTRY_COUNT);
   private final ScalableRWLock                       modificationLock = new ScalableRWLock();
-  private final long id;
-  private final Striped<Lock> entryLock = Striped.lazyWeakLock(SUPPOSED_ENTRY_COUNT);
+  private final long                                 id;
 
   MemTable(long id) {
     this.id = id;
@@ -58,24 +57,23 @@ public class MemTable implements Table {
     if (!locked) {
       return false;
     }
-    try {
-      final Lock lock = entryLock.get(sha1);
-      lock.lock();
-      try {
-        final byte[] oldValue = map.get(new KeyHolder(key, sha1));
 
+    final KeyHolder keyHolder = new KeyHolder(key, sha1);
+    boolean[] ret = new boolean[1];
+    try {
+      map.compute(keyHolder, (k, v) -> {
         while (true) {
           final long state = this.state.get();
           final boolean filled = (state & FILL_BIT) != 0;
 
           if (filled) {
-            return false;
+            return v;
           }
 
           final int segmentSize = (int) (state & SEGMENT_SIZE_MASK);
           final int heapSize = (int) (state >>> SEGMENT_SIZE_OFFSET);
 
-          final int[] sizes = calculateNewSize(segmentSize, heapSize, key, value, oldValue);
+          final int[] sizes = calculateNewSize(segmentSize, heapSize, key, value, v);
           final int newSegmentSize = sizes[0];
           final int newHeapSize = sizes[1];
 
@@ -83,7 +81,7 @@ public class MemTable implements Table {
             final long newState = state | FILL_BIT;
 
             if (this.state.compareAndSet(state, newState)) {
-              return false;
+              return v;
             }
 
             continue;
@@ -92,17 +90,16 @@ public class MemTable implements Table {
           final long newState = (((long) newHeapSize) << SEGMENT_SIZE_OFFSET) | newSegmentSize;
 
           if (this.state.compareAndSet(state, newState)) {
-            map.put(new KeyHolder(key, sha1), value);
-
-            return true;
+            ret[0] = true;
+            return value;
           }
         }
-      } finally {
-        lock.unlock();
-      }
+      });
     } finally {
       modificationLock.sharedUnlock();
     }
+
+    return ret[0];
   }
 
   private int[] calculateNewSize(int segmentSize, int heapSize, byte[] key, byte[] value, byte[] oldValue) {
@@ -376,8 +373,8 @@ public class MemTable implements Table {
     final int index;
 
     long waterMark;
-    int destBucket = -1;
-    int segmentSize;
+    int  destBucket = -1;
+    int  segmentSize;
 
     List<BucketEntry> entries = new ArrayList<>();
 
@@ -387,7 +384,7 @@ public class MemTable implements Table {
   }
 
   private class BucketEntry {
-    private long waterMark = -1;
+    private long   waterMark = -1;
     private byte[] sha1;
     private byte[] key;
     private byte[] value;

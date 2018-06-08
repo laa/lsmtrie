@@ -862,7 +862,7 @@ public class LSMTrieTest {
 
   @Test
   public void mtTestOnlyHafFillHalfRead() throws Exception {
-    for (int k = 0; k < 10; k++) {
+    for (int k = 0; k < 1; k++) {
       int n = 4 * 8 * 156_672;
       final ExecutorService executorService = Executors.newCachedThreadPool();
       final List<Future<Void>> writers = new ArrayList<>();

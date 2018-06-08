@@ -14,21 +14,25 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class OLSMTrie {
   private static final ForkJoinPool compactionPool = ForkJoinPool.commonPool();
 
-  private final Path root;
-  private final AtomicReference<MemTable> current = new AtomicReference<>();
-  private final String name;
-  private final AtomicLong tableIdGen            = new AtomicLong();
-  private final AtomicLong nodeIdGen             = new AtomicLong();
-  private final Semaphore  allowedQueueMemtables = new Semaphore(2);
-  private volatile Node0 node0;
-  private final AtomicBoolean stopCompaction = new AtomicBoolean();
-  private final Registry registry;
+  private final    Path          root;
+  private volatile MemTable      current;
+  private final    String        name;
+  private final    AtomicLong    tableIdGen            = new AtomicLong();
+  private final    AtomicLong    nodeIdGen             = new AtomicLong();
+  private final    Semaphore     allowedQueueMemtables = new Semaphore(4);
+  private volatile Node0         node0;
+  private final    AtomicBoolean stopCompaction        = new AtomicBoolean();
+  private final    Registry      registry;
 
-  private final Semaphore compactionCounter = new Semaphore(0);
+  private final Lock memtableAdditionLock = new ReentrantLock();
+
+  private final    Semaphore      compactionCounter = new Semaphore(0);
   private volatile CompactionTask compactionTask;
 
   private final ExecutorService serviceThreads = Executors.newCachedThreadPool();
@@ -39,6 +43,7 @@ public class OLSMTrie {
     this.registry = new Registry(root, name);
   }
 
+  @SuppressWarnings("WeakerAccess")
   public void load() throws IOException {
     Files.createDirectories(root);
 
@@ -47,7 +52,7 @@ public class OLSMTrie {
     final long tableId = tableIdGen.getAndIncrement();
     final MemTable table = new MemTable(tableId);
 
-    current.set(table);
+    current = table;
 
     node0.addMemTable(table);
 
@@ -55,9 +60,10 @@ public class OLSMTrie {
     compactionPool.submit(compactionTask);
   }
 
+  @SuppressWarnings("WeakerAccess")
   public void close() {
     System.out.println("Conver memtable to htable");
-    final MemTable memTable = current.get();
+    final MemTable memTable = current;
     memTable.waitTillZeroModifiers();
 
     if (memTable.isNotEmpty()) {
@@ -111,6 +117,7 @@ public class OLSMTrie {
     }
   }
 
+  @SuppressWarnings("WeakerAccess")
   public void delete() {
     stopCompaction.set(true);
     serviceThreads.shutdown();
@@ -136,24 +143,31 @@ public class OLSMTrie {
 
     final byte[] sha1 = digest.digest(key);
 
-    MemTable memTable = current.get();
+    MemTable memTable = current;
     boolean added = memTable.put(sha1, key, value);
 
     while (!added) {
-      final MemTable newTable = new MemTable(tableIdGen.getAndIncrement());
-      node0.addMemTable(newTable);
-      if (current.compareAndSet(memTable, newTable)) {
+      if (memtableAdditionLock.tryLock()) {
         try {
-          allowedQueueMemtables.acquire();
-        } catch (InterruptedException e) {
-          return;
+          if (memTable == current) {
+            final MemTable newTable = new MemTable(tableIdGen.getAndIncrement());
+            node0.addMemTable(newTable);
+            current = newTable;
+
+            try {
+              allowedQueueMemtables.acquire();
+            } catch (InterruptedException e) {
+              return;
+            }
+
+            serviceThreads.submit(new MemTableSaver(memTable));
+          }
+        } finally {
+          memtableAdditionLock.unlock();
         }
-        serviceThreads.submit(new MemTableSaver(memTable));
-      } else {
-        node0.removeTable(newTable.getId());
       }
 
-      memTable = current.get();
+      memTable = current;
       added = memTable.put(sha1, key, value);
     }
   }

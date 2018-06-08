@@ -55,7 +55,7 @@ public class HTable implements Table {
   }
 
 
-  public Iterator<byte[][]> bucketIterator(final int bucketIndex) {
+  Iterator<byte[][]> bucketIterator(final int bucketIndex) {
     final Iterator<byte[][]> iterator;
 
     modificationLock.sharedLock();
@@ -118,7 +118,7 @@ public class HTable implements Table {
 
           if (entryType == HEAP_ENTREE_TYPE) {
             final byte[] sha1 = new byte[SHA_1_SIZE];
-            System.arraycopy(data, 0, sha1, 0, SHA_1_SIZE);
+            System.arraycopy(data, currentPosition, sha1, 0, SHA_1_SIZE);
             currentPosition += SHA_1_SIZE;
 
             final int heapReference = bucket.getInt(currentPosition);
@@ -162,18 +162,18 @@ public class HTable implements Table {
     return id;
   }
 
-  public void clearBuffer() {
+  void clearBuffer() {
     modificationLock.exclusiveLock();
     final DirectBuffer dbf = (DirectBuffer) buffer;
     final Cleaner cleaner = dbf.cleaner();
     cleaner.clean();
   }
 
-  public Path getBloomFilterPath() {
+  Path getBloomFilterPath() {
     return bloomFilterPath;
   }
 
-  public Path getHtablePath() {
+  Path getHtablePath() {
     return htablePath;
   }
 

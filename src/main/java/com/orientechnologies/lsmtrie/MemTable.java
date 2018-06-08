@@ -30,7 +30,6 @@ public class MemTable implements Table {
 
   private static final int SEGMENT_SIZE_OFFSET = 24;
 
-  private static final int   MAX_SIZE    = 64 * 1024 * 1024;
   private static final float LOAD_FACTOR = 0.9f;
 
   private static final int MAX_ENTRY_SIZE = 256;
@@ -80,7 +79,7 @@ public class MemTable implements Table {
           final int newSegmentSize = sizes[0];
           final int newHeapSize = sizes[1];
 
-          if (newSegmentSize > SEGMENT_SIZE_LIMIT || newSegmentSize + newHeapSize > MAX_SIZE) {
+          if (newSegmentSize > SEGMENT_SIZE_LIMIT || newSegmentSize + newHeapSize > TOTAL_SIZE) {
             final long newState = state | FILL_BIT;
 
             if (this.state.compareAndSet(state, newState)) {
@@ -90,7 +89,7 @@ public class MemTable implements Table {
             continue;
           }
 
-          final long newState = (newHeapSize << SEGMENT_SIZE_OFFSET) | newSegmentSize;
+          final long newState = (((long) newHeapSize) << SEGMENT_SIZE_OFFSET) | newSegmentSize;
 
           if (this.state.compareAndSet(state, newState)) {
             map.put(new KeyHolder(key, sha1), value);
@@ -145,7 +144,7 @@ public class MemTable implements Table {
     throw new UnsupportedOperationException();
   }
 
-  public void waitTillZeroModifiers() {
+  void waitTillZeroModifiers() {
     modificationLock.exclusiveLock();
   }
 
@@ -163,14 +162,14 @@ public class MemTable implements Table {
     return !map.isEmpty();
   }
 
-  private int memorySize() {
+  int memorySize() {
     int size = HEAP_DATA_OFFSET;
 
     for (Map.Entry<KeyHolder, byte[]> entry : map.entrySet()) {
       final int entryLength = entry.getKey().key.length + entry.getValue().length;
 
       if (entryLength > MAX_ENTRY_SIZE) {
-        size += HEAP_KEY_LENGTH + HEAP_VALUE_LENGTH;
+        size += HEAP_KEY_LENGTH + HEAP_VALUE_LENGTH + entryLength;
       }
     }
 
@@ -181,7 +180,7 @@ public class MemTable implements Table {
     return (state.get() & FILL_BIT) != 0;
   }
 
-  public SerializedHTable toHTable() {
+  SerializedHTable toHTable() {
     final int size = memorySize();
     final ByteBuffer buffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder());
 

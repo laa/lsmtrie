@@ -80,6 +80,80 @@ public class TableTest {
   }
 
   @Test
+  public void testAddNBigValues() throws Exception {
+    for (int k = 0; k < 600; k++) {
+      for (int i = 0; i < 17; i++) {
+        final int items = 1 << i;
+
+        final long seed = System.nanoTime();
+
+        System.out.println("testAdd " + items + " big items seed : " + seed);
+        final Random random = new Random(seed);
+
+        Map<ByteHolder, ByteHolder> entries = generateNBigEntries(items, random);
+        assertEquals(items, entries.size());
+        MemTable memTable = new MemTable(1);
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        fillMemTable(memTable, entries, digest);
+        Assert.assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
+
+        Set<ByteHolder> nonExisting = generateNNotExistingEntries(items, entries, random);
+        assertEquals(items, nonExisting.size());
+
+        assertTable(entries, nonExisting, memTable, digest);
+
+        SerializedHTable serializedHTable = memTable.toHTable();
+
+        final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer().asReadOnlyBuffer(),
+            1, null, null);
+
+        assertTable(entries, nonExisting, hTable, digest);
+        assertHTableIterator(entries, hTable, digest);
+
+        serializedHTable.free();
+      }
+    }
+  }
+
+  @Test
+  public void testAddNMixedValues() throws Exception {
+    for (int k = 0; k < 600; k++) {
+      for (int i = 0; i < 17; i++) {
+        final int items = 1 << i;
+
+        final long seed = System.nanoTime();
+
+        System.out.println("testAdd " + items + " mixed items seed : " + seed);
+        final Random random = new Random(seed);
+
+        Map<ByteHolder, ByteHolder> entries = generateNMixedEntries(items, random);
+        assertEquals(items, entries.size());
+        MemTable memTable = new MemTable(1);
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        fillMemTable(memTable, entries, digest);
+        Assert.assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
+
+        Set<ByteHolder> nonExisting = generateNNotExistingEntries(items, entries, random);
+        assertEquals(items, nonExisting.size());
+
+        assertTable(entries, nonExisting, memTable, digest);
+
+        SerializedHTable serializedHTable = memTable.toHTable();
+
+        final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer().asReadOnlyBuffer(),
+            1, null, null);
+
+        assertTable(entries, nonExisting, hTable, digest);
+        assertHTableIterator(entries, hTable, digest);
+
+        serializedHTable.free();
+      }
+    }
+  }
+
+  @Test
   public void testTillFull() throws Exception {
     long assertHTableTime = 0;
     long convertHTableTime = 0;
@@ -145,6 +219,102 @@ public class TableTest {
   }
 
   @Test
+  public void testTillFullBigValues() throws Exception {
+    for (int k = 0; k < 3600; k++) {
+      final Map<ByteHolder, ByteHolder> data = new HashMap<>();
+      final MemTable memTable = new MemTable(1);
+
+      final long seed = System.nanoTime();
+      System.out.println("testTillFullBig seed : " + seed);
+      Random random = new Random(seed);
+
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      byte[] key;
+      byte[] value;
+      byte[] sha1;
+      boolean added;
+      do {
+        key = generateBigKey(random);
+
+        while (data.containsKey(new ByteHolder(key))) {
+          key = generateBigKey(random);
+        }
+
+        value = generateBigValue(random);
+        data.put(new ByteHolder(key), new ByteHolder(value));
+
+        digest.reset();
+        sha1 = digest.digest(key);
+        digest.reset();
+
+        added = memTable.put(sha1, key, value);
+        if (!added) {
+          data.remove(new ByteHolder(key));
+        }
+      } while (added);
+
+      Set<ByteHolder> absentValues = generateNNotExistingEntries(data.size(), data, random);
+      assertTable(data, absentValues, memTable, digest);
+
+      final SerializedHTable serializedHTable = memTable.toHTable();
+
+      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1, null, null);
+      assertTable(data, absentValues, hTable, digest);
+      assertHTableIterator(data, hTable, digest);
+
+      serializedHTable.free();
+    }
+  }
+
+  @Test
+  public void testTillFullMixedValues() throws Exception {
+    for (int k = 0; k < 3600; k++) {
+      final Map<ByteHolder, ByteHolder> data = new HashMap<>();
+      final MemTable memTable = new MemTable(1);
+
+      final long seed = System.nanoTime();
+      System.out.println("testTillFullMixed seed : " + seed);
+      Random random = new Random(seed);
+
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      byte[] key;
+      byte[] value;
+      byte[] sha1;
+      boolean added;
+      do {
+        key = generateMixedKey(random);
+
+        while (data.containsKey(new ByteHolder(key))) {
+          key = generateMixedKey(random);
+        }
+
+        value = generateMixedValue(random);
+        data.put(new ByteHolder(key), new ByteHolder(value));
+
+        digest.reset();
+        sha1 = digest.digest(key);
+        digest.reset();
+
+        added = memTable.put(sha1, key, value);
+        if (!added) {
+          data.remove(new ByteHolder(key));
+        }
+      } while (added);
+
+      Set<ByteHolder> absentValues = generateNNotExistingEntries(data.size(), data, random);
+      assertTable(data, absentValues, memTable, digest);
+
+      final SerializedHTable serializedHTable = memTable.toHTable();
+
+      final HTable hTable = new HTable(serializedHTable.getBloomFilters(), serializedHTable.getHtableBuffer(), 1, null, null);
+      assertTable(data, absentValues, hTable, digest);
+      assertHTableIterator(data, hTable, digest);
+
+      serializedHTable.free();
+    }
+  }
+
+  @Test
   public void mtFillAndCheckTest() throws Exception {
     for (int n = 0; n < 10000; n++) {
       final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -169,6 +339,55 @@ public class TableTest {
   }
 
   @Test
+  public void mtFillAndCheckBigTest() throws Exception {
+    for (int n = 0; n < 10000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
+      final MemTable memTable = new MemTable(1);
+
+      final Striped<Lock> striped = Striped.lazyWeakLock(64);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new CheckedBigAdder(memTable, map, striped)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertTrue(memTable.isFilled());
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      assertTable(map, Collections.emptySet(), memTable, digest);
+    }
+  }
+
+  @Test
+  public void mtFillAndCheckMixedTest() throws Exception {
+    for (int n = 0; n < 10000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
+      final MemTable memTable = new MemTable(1);
+
+      final Striped<Lock> striped = Striped.lazyWeakLock(64);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new CheckedMixedAdder(memTable, map, striped)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertTrue(memTable.isFilled());
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      assertTable(map, Collections.emptySet(), memTable, digest);
+    }
+  }
+
+
+  @Test
   public void mtFullTest() throws Exception {
     for (int n = 0; n < 50000; n++) {
       final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -177,6 +396,44 @@ public class TableTest {
 
       for (int i = 0; i < 8; i++) {
         futures.add(executorService.submit(new Adder(memTable)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertTrue(memTable.isFilled());
+    }
+  }
+
+  @Test
+  public void mtFullBigTest() throws Exception {
+    for (int n = 0; n < 50000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final MemTable memTable = new MemTable(1);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new BigAdder(memTable)));
+      }
+
+      for (Future<Void> future : futures) {
+        future.get();
+      }
+
+      assertTrue(memTable.isFilled());
+    }
+  }
+
+  @Test
+  public void mtFullMixedTest() throws Exception {
+    for (int n = 0; n < 50000; n++) {
+      final ExecutorService executorService = Executors.newCachedThreadPool();
+      final MemTable memTable = new MemTable(1);
+      final List<Future<Void>> futures = new ArrayList<>();
+
+      for (int i = 0; i < 8; i++) {
+        futures.add(executorService.submit(new MixedAdder(memTable)));
       }
 
       for (Future<Void> future : futures) {
@@ -208,6 +465,20 @@ public class TableTest {
     return key;
   }
 
+  private static byte[] generateBigKey(Random random) {
+    final int keySize = random.nextInt(128) + 256;
+    final byte[] key = new byte[keySize];
+    random.nextBytes(key);
+    return key;
+  }
+
+  private static byte[] generateMixedKey(Random random) {
+    final int keySize = random.nextInt(256) + 8;
+    final byte[] key = new byte[keySize];
+    random.nextBytes(key);
+    return key;
+  }
+
   private Map<ByteHolder, ByteHolder> generateNEntries(int n, Random random) {
     final Map<ByteHolder, ByteHolder> entries = new HashMap<>();
 
@@ -222,8 +493,50 @@ public class TableTest {
     return entries;
   }
 
+  private Map<ByteHolder, ByteHolder> generateNBigEntries(int n, Random random) {
+    final Map<ByteHolder, ByteHolder> entries = new HashMap<>();
+
+    while (entries.size() < n) {
+      final byte[] key = generateBigKey(random);
+
+      final byte[] value = generateBigValue(random);
+
+      entries.put(new ByteHolder(key), new ByteHolder(value));
+    }
+
+    return entries;
+  }
+
+  private Map<ByteHolder, ByteHolder> generateNMixedEntries(int n, Random random) {
+    final Map<ByteHolder, ByteHolder> entries = new HashMap<>();
+
+    while (entries.size() < n) {
+      final byte[] key = generateMixedKey(random);
+
+      final byte[] value = generateMixedValue(random);
+
+      entries.put(new ByteHolder(key), new ByteHolder(value));
+    }
+
+    return entries;
+  }
+
   private static byte[] generateValue(Random random) {
     final int valueSize = random.nextInt(30) + 15;
+    final byte[] value = new byte[valueSize];
+    random.nextBytes(value);
+    return value;
+  }
+
+  private static byte[] generateBigValue(Random random) {
+    final int valueSize = random.nextInt(125) + 256;
+    final byte[] value = new byte[valueSize];
+    random.nextBytes(value);
+    return value;
+  }
+
+  private static byte[] generateMixedValue(Random random) {
+    final int valueSize = random.nextInt(256) + 8;
     final byte[] value = new byte[valueSize];
     random.nextBytes(value);
     return value;
@@ -348,6 +661,96 @@ public class TableTest {
     }
   }
 
+  private final class CheckedBigAdder implements Callable<Void> {
+    private final MemTable                                  memTable;
+    private final ConcurrentHashMap<ByteHolder, ByteHolder> map;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+    private final Striped<Lock> striped;
+
+    private CheckedBigAdder(MemTable memTable, ConcurrentHashMap<ByteHolder, ByteHolder> map, Striped<Lock> striped) throws Exception {
+      this.memTable = memTable;
+      this.map = map;
+      this.striped = striped;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() {
+      while (true) {
+        final byte[] key = generateBigKey(random);
+        final byte[] value = generateBigValue(random);
+
+        messageDigest.reset();
+
+        ByteHolder keyHolder = new ByteHolder(key);
+        ByteHolder valueHolder = new ByteHolder(value);
+
+        final Lock lock = striped.get(key);
+        lock.lock();
+        try {
+          byte[] sha1 = messageDigest.digest(key);
+          final boolean put = memTable.put(sha1, key, value);
+          if (put) {
+            map.put(keyHolder, valueHolder);
+          } else {
+            break;
+          }
+        } finally {
+          lock.unlock();
+        }
+      }
+
+      return null;
+    }
+  }
+
+
+  private final class CheckedMixedAdder implements Callable<Void> {
+    private final MemTable                                  memTable;
+    private final ConcurrentHashMap<ByteHolder, ByteHolder> map;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+    private final Striped<Lock> striped;
+
+    private CheckedMixedAdder(MemTable memTable, ConcurrentHashMap<ByteHolder, ByteHolder> map, Striped<Lock> striped) throws Exception {
+      this.memTable = memTable;
+      this.map = map;
+      this.striped = striped;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() {
+      while (true) {
+        final byte[] key = generateMixedKey(random);
+        final byte[] value = generateMixedValue(random);
+
+        messageDigest.reset();
+
+        ByteHolder keyHolder = new ByteHolder(key);
+        ByteHolder valueHolder = new ByteHolder(value);
+
+        final Lock lock = striped.get(key);
+        lock.lock();
+        try {
+          byte[] sha1 = messageDigest.digest(key);
+          final boolean put = memTable.put(sha1, key, value);
+          if (put) {
+            map.put(keyHolder, valueHolder);
+          } else {
+            break;
+          }
+        } finally {
+          lock.unlock();
+        }
+      }
+
+      return null;
+    }
+  }
+
+
   private final class Adder implements Callable<Void> {
     private final MemTable memTable;
     private final Random random = new Random();
@@ -363,6 +766,64 @@ public class TableTest {
       while (true) {
         final byte[] key = generateKey(random);
         final byte[] value = generateValue(random);
+
+        messageDigest.reset();
+
+        final byte[] sha1 = messageDigest.digest(key);
+        final boolean put = memTable.put(sha1, key, value);
+        if (!put) {
+          break;
+        }
+      }
+
+      return null;
+    }
+  }
+
+  private final class BigAdder implements Callable<Void> {
+    private final MemTable memTable;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+
+    private BigAdder(MemTable memTable) throws Exception {
+      this.memTable = memTable;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() {
+      while (true) {
+        final byte[] key = generateBigKey(random);
+        final byte[] value = generateBigValue(random);
+
+        messageDigest.reset();
+
+        final byte[] sha1 = messageDigest.digest(key);
+        final boolean put = memTable.put(sha1, key, value);
+        if (!put) {
+          break;
+        }
+      }
+
+      return null;
+    }
+  }
+
+  private final class MixedAdder implements Callable<Void> {
+    private final MemTable memTable;
+    private final Random random = new Random();
+    private final MessageDigest messageDigest;
+
+    private MixedAdder(MemTable memTable) throws Exception {
+      this.memTable = memTable;
+      messageDigest = MessageDigest.getInstance("SHA-1");
+    }
+
+    @Override
+    public Void call() {
+      while (true) {
+        final byte[] key = generateMixedKey(random);
+        final byte[] value = generateMixedValue(random);
 
         messageDigest.reset();
 

@@ -27,8 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertNull;
 
 public class LSMTrieLoadTest {
   private static Path buildDirectory;
@@ -146,6 +146,7 @@ public class LSMTrieLoadTest {
       return Arrays.hashCode(bytes);
     }
 
+    @SuppressWarnings("NullableProblems")
     @Override
     public int compareTo(ByteHolder other) {
 
@@ -159,7 +160,7 @@ public class LSMTrieLoadTest {
         }
       } else if (bytes.length > other.bytes.length) {
         return 1;
-      } else if (bytes.length < other.bytes.length) {
+      } else {
         return -1;
       }
 
@@ -198,7 +199,7 @@ public class LSMTrieLoadTest {
 
         long ops = 0;
         long start = System.nanoTime();
-        long end = start;
+        long end;
 
         while (!stop.get()) {
 

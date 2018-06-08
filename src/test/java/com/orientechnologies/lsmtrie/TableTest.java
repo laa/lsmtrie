@@ -1,7 +1,6 @@
 package com.orientechnologies.lsmtrie;
 
 import com.google.common.util.concurrent.Striped;
-import org.junit.Assert;
 import org.junit.Test;
 
 import java.security.MessageDigest;
@@ -22,10 +21,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.Lock;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 public class TableTest {
   @Test
@@ -96,7 +95,7 @@ public class TableTest {
 
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         fillMemTable(memTable, entries, digest);
-        Assert.assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
+        assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
 
         Set<ByteHolder> nonExisting = generateNNotExistingEntries(items, entries, random);
         assertEquals(items, nonExisting.size());
@@ -133,7 +132,7 @@ public class TableTest {
 
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         fillMemTable(memTable, entries, digest);
-        Assert.assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
+        assertTrue(memTable.memorySize() < Table.TOTAL_SIZE);
 
         Set<ByteHolder> nonExisting = generateNNotExistingEntries(items, entries, random);
         assertEquals(items, nonExisting.size());
@@ -579,19 +578,19 @@ public class TableTest {
 
       while (bucketIterator.hasNext()) {
         final byte[][] entry = bucketIterator.next();
-        Assert.assertArrayEquals(existingValues.get(new ByteHolder(entry[1])).bytes, entry[2]);
+        assertArrayEquals(existingValues.get(new ByteHolder(entry[1])).bytes, entry[2]);
         counter++;
 
         if (entry[0] != null) {
           digest.reset();
 
           final byte[] sha1 = digest.digest(entry[1]);
-          Assert.assertArrayEquals(sha1, entry[0]);
+          assertArrayEquals(sha1, entry[0]);
         }
       }
     }
 
-    Assert.assertEquals(existingValues.size(), counter);
+    assertEquals(existingValues.size(), counter);
   }
 
   private class ByteHolder {

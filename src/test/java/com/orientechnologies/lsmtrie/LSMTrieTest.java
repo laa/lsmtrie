@@ -736,9 +736,11 @@ public class LSMTrieTest {
 
   @Test
   public void mtTestOnlyFill() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int k = 0; k < 10; k++) {
       int n = 2 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
+
       final List<Future<Void>> futures = new ArrayList<>();
 
       OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyFill", buildDirectory);
@@ -774,13 +776,17 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
   public void mtTestOnlyFillBigKey() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int k = 0; k < 10; k++) {
       int n = 2 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
+
       final List<Future<Void>> futures = new ArrayList<>();
 
       OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyFillBigKeys", buildDirectory);
@@ -816,13 +822,16 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
   public void mtTestOnlyFillMixedKeys() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int k = 0; k < 10; k++) {
       int n = 2 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final List<Future<Void>> futures = new ArrayList<>();
 
       OLSMTrie lsmTrie = new OLSMTrie("mtTestOnlyFillMixedKeys", buildDirectory);
@@ -858,13 +867,16 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
   public void mtTestOnlyHafFillHalfRead() throws Exception {
-    for (int k = 0; k < 1; k++) {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
+    for (int k = 0; k < 10; k++) {
       int n = 4 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final List<Future<Void>> writers = new ArrayList<>();
       final List<Future<Void>> readers = new ArrayList<>();
 
@@ -914,13 +926,17 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
   public void mtTestOnlyHafFillHalfReadBigKeys() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int k = 0; k < 10; k++) {
       int n = 4 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
+
       final List<Future<Void>> writers = new ArrayList<>();
       final List<Future<Void>> readers = new ArrayList<>();
 
@@ -970,13 +986,17 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
   public void mtTestOnlyHafFillHalfReadMixedKeys() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int k = 0; k < 10; k++) {
       int n = 4 * 8 * 156_672;
-      final ExecutorService executorService = Executors.newCachedThreadPool();
+
       final List<Future<Void>> writers = new ArrayList<>();
       final List<Future<Void>> readers = new ArrayList<>();
 
@@ -1026,6 +1046,8 @@ public class LSMTrieTest {
       assertTable(data, Collections.emptySet(), lsmTrie);
       lsmTrie.delete();
     }
+
+    executorService.shutdown();
   }
 
   @Test
@@ -1075,6 +1097,8 @@ public class LSMTrieTest {
     System.out.println("Assert table");
     assertTable(data, Collections.emptySet(), lsmTrie);
     lsmTrie.delete();
+
+    executorService.shutdown();
   }
 
   @Test
@@ -1124,6 +1148,8 @@ public class LSMTrieTest {
     System.out.println("Assert table");
     assertTable(data, Collections.emptySet(), lsmTrie);
     lsmTrie.delete();
+
+    executorService.shutdown();
   }
 
   @Test
@@ -1173,6 +1199,8 @@ public class LSMTrieTest {
     System.out.println("Assert table");
     assertTable(data, Collections.emptySet(), lsmTrie);
     lsmTrie.delete();
+
+    executorService.shutdown();
   }
 
   private static byte[] generateKey(Random random) {

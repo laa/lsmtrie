@@ -336,6 +336,8 @@ public class TableTest {
       MessageDigest digest = MessageDigest.getInstance("SHA-1");
       assertTable(map, Collections.emptySet(), memTable, digest);
     }
+
+    executorService.shutdown();
   }
 
   @Test
@@ -361,6 +363,8 @@ public class TableTest {
       MessageDigest digest = MessageDigest.getInstance("SHA-1");
       assertTable(map, Collections.emptySet(), memTable, digest);
     }
+
+    executorService.shutdown();
   }
 
   @Test
@@ -386,6 +390,8 @@ public class TableTest {
       MessageDigest digest = MessageDigest.getInstance("SHA-1");
       assertTable(map, Collections.emptySet(), memTable, digest);
     }
+
+    executorService.shutdown();
   }
 
 
@@ -407,6 +413,8 @@ public class TableTest {
 
       assertTrue(memTable.isFilled());
     }
+
+    executorService.shutdown();
   }
 
   @Test
@@ -427,6 +435,8 @@ public class TableTest {
 
       assertTrue(memTable.isFilled());
     }
+
+    executorService.shutdown();
   }
 
   @Test
@@ -447,6 +457,8 @@ public class TableTest {
 
       assertTrue(memTable.isFilled());
     }
+
+    executorService.shutdown();
   }
 
   private Set<ByteHolder> generateNNotExistingEntries(int n, Map<ByteHolder, ByteHolder> entries, Random random) {

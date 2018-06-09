@@ -315,8 +315,9 @@ public class TableTest {
 
   @Test
   public void mtFillAndCheckTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 10000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
       final MemTable memTable = new MemTable(1);
 
@@ -339,8 +340,9 @@ public class TableTest {
 
   @Test
   public void mtFillAndCheckBigTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 10000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
       final MemTable memTable = new MemTable(1);
 
@@ -363,8 +365,9 @@ public class TableTest {
 
   @Test
   public void mtFillAndCheckMixedTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 10000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final ConcurrentHashMap<ByteHolder, ByteHolder> map = new ConcurrentHashMap<>();
       final MemTable memTable = new MemTable(1);
 
@@ -388,8 +391,9 @@ public class TableTest {
 
   @Test
   public void mtFullTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 50000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final MemTable memTable = new MemTable(1);
       final List<Future<Void>> futures = new ArrayList<>();
 
@@ -407,8 +411,9 @@ public class TableTest {
 
   @Test
   public void mtFullBigTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 50000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final MemTable memTable = new MemTable(1);
       final List<Future<Void>> futures = new ArrayList<>();
 
@@ -426,8 +431,9 @@ public class TableTest {
 
   @Test
   public void mtFullMixedTest() throws Exception {
+    final ExecutorService executorService = Executors.newCachedThreadPool();
+
     for (int n = 0; n < 50000; n++) {
-      final ExecutorService executorService = Executors.newCachedThreadPool();
       final MemTable memTable = new MemTable(1);
       final List<Future<Void>> futures = new ArrayList<>();
 
